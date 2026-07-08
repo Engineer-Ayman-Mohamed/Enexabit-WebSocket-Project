@@ -1,0 +1,47 @@
+@EnexabitWebSocketProject.API_HostAddress = http://localhost:5253
+
+### Register a new user
+POST {{EnexabitWebSocketProject.API_HostAddress}}/api/auth/register
+Content-Type: application/json
+
+{
+  "username": "alice",
+  "password": "pass123",
+  "displayName": "Alice"
+}
+
+### Login
+POST {{EnexabitWebSocketProject.API_HostAddress}}/api/auth/login
+Content-Type: application/json
+
+{
+  "username": "alice",
+  "password": "pass123"
+}
+
+### Refresh token (cookie sent automatically)
+POST {{EnexabitWebSocketProject.API_HostAddress}}/api/auth/refresh
+
+### Logout (replace <token> with actual JWT)
+POST {{EnexabitWebSocketProject.API_HostAddress}}/api/auth/logout
+Authorization: Bearer <token>
+
+### List all channels (replace <token>)
+GET {{EnexabitWebSocketProject.API_HostAddress}}/api/channels
+Authorization: Bearer <token>
+
+### Get messages for channel 1 (replace <token>)
+GET {{EnexabitWebSocketProject.API_HostAddress}}/api/channels/1/messages
+Authorization: Bearer <token>
+
+### Send a message to channel 1 (replace <token>)
+POST {{EnexabitWebSocketProject.API_HostAddress}}/api/channels/1/messages
+Content-Type: application/json
+Authorization: Bearer <token>
+
+{
+  "text": "Hello from REST!"
+}
+
+### SignalR hub (for reference — connect via JavaScript client)
+# WebSocket: ws://localhost:5253/channelHub?access_token=<token>
