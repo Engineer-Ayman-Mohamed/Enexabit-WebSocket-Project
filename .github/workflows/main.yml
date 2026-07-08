@@ -17,15 +17,15 @@ jobs:
           dotnet-version: '10.0.x'
 
       - name: Restore
-        working-directory: ./EnexabitWebSocketProject
+        working-directory: EnexabitWebSocketProject
         run: dotnet restore
 
       - name: Build
-        working-directory: ./EnexabitWebSocketProject
+        working-directory: EnexabitWebSocketProject
         run: dotnet build --configuration Release --no-restore
 
       - name: Publish
-        working-directory: ./EnexabitWebSocketProject
+        working-directory: EnexabitWebSocketProject
         run: dotnet publish --configuration Release --output ../publish
 
       - name: Deploy via WebDeploy
