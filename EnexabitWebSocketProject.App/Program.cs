@@ -47,6 +47,17 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("WebApp", policy =>
+    {
+        policy.WithOrigins("http://localhost:5253")
+              .AllowAnyHeader()
+              .AllowAnyMethod()
+              .AllowCredentials();
+    });
+});
+
 builder.Services.AddAuthorization();
 
 var app = builder.Build();
@@ -60,9 +71,20 @@ using (var scope = app.Services.CreateScope())
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
+app.UseCors("WebApp");
 app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
+
+app.Use(async (context, next) =>
+{
+    context.Response.Headers.Append("Content-Security-Policy",
+        "default-src 'self'; " +
+        "script-src 'self' https://cdnjs.cloudflare.com; " +
+        "style-src 'self' 'unsafe-inline'; " +
+        "connect-src 'self' ws://localhost:5253");
+    await next();
+});
 
 app.MapPost("/api/auth/register", async (RegisterRequest req, AuthService auth) =>
 {
@@ -166,5 +188,4 @@ app.MapPost("/api/channels/{channelId:int}/messages", async (int channelId, Send
         message.CreatedAt
     });
 }).RequireAuthorization();
-
 app.Run();
