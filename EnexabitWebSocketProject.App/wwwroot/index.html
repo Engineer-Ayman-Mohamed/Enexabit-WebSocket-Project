@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebSocket Chat</title>
+    <style>
+        body { font-family: sans-serif; max-width: 800px; margin: 20px auto; padding: 0 20px; }
+        #login-form { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
+        #login-form input { padding: 8px; }
+        #login-form button { padding: 8px 16px; }
+        #user-info { margin-bottom: 16px; font-weight: bold; display: none; }
+        #channels { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+        .channel { padding: 8px 16px; border: 1px solid #ccc; cursor: pointer; border-radius: 4px; }
+        .channel.active { background: #0066cc; color: white; border-color: #0066cc; }
+        #messages { height: 400px; overflow-y: auto; border: 1px solid #ddd; padding: 12px; margin-bottom: 8px; background: #fafafa; }
+        #messages p { margin: 4px 0; }
+        .system { color: #888; font-style: italic; font-size: 0.85em; }
+        .msg-user { font-weight: bold; }
+        #input-area { display: flex; gap: 8px; }
+        #message-input { flex: 1; padding: 8px; }
+        #status { margin-top: 8px; color: #666; font-size: 0.85em; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+    <h2>WebSocket Chat</h2>
+
+    <div id="login-form">
+        <input id="username-input" type="text" placeholder="Username" />
+        <input id="password-input" type="password" placeholder="Password" />
+        <button id="login-btn">Login</button>
+        <span id="login-error" style="color:red;"></span>
+    </div>
+
+    <div id="user-info"></div>
+    <div id="chat-area" class="hidden">
+        <div id="status">Disconnected</div>
+        <div id="channels"></div>
+        <div id="messages"></div>
+        <div id="input-area">
+            <input id="message-input" type="text" placeholder="Type a message..." disabled />
+            <button id="send-btn" disabled>Send</button>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.0/signalr.min.js"></script>
+    <script>
+        const channels = [
+            { id: 1, name: 'general' },
+            { id: 2, name: 'random' },
+            { id: 3, name: 'tech' },
+            { id: 4, name: 'support' },
+            { id: 5, name: 'off-topic' }
+        ];
+
+        let currentChannel = null;
+        let connection = null;
+        let accessToken = null;
+
+        const loginForm = document.getElementById('login-form');
+        const usernameInput = document.getElementById('username-input');
+        const passwordInput = document.getElementById('password-input');
+        const loginBtn = document.getElementById('login-btn');
+        const loginError = document.getElementById('login-error');
+        const userInfo = document.getElementById('user-info');
+        const chatArea = document.getElementById('chat-area');
+        const channelsDiv = document.getElementById('channels');
+        const messagesDiv = document.getElementById('messages');
+        const input = document.getElementById('message-input');
+        const sendBtn = document.getElementById('send-btn');
+        const status = document.getElementById('status');
+
+        channels.forEach(ch => {
+            const btn = document.createElement('div');
+            btn.className = 'channel';
+            btn.textContent = ch.name;
+            btn.onclick = () => joinChannel(ch.id);
+            channelsDiv.appendChild(btn);
+        });
+
+        loginBtn.onclick = login;
+        passwordInput.onkeydown = e => { if (e.key === 'Enter') login(); };
+
+        async function login() {
+            const username = usernameInput.value.trim();
+            const password = passwordInput.value.trim();
+            if (!username || !password) return;
+
+            loginError.textContent = '';
+
+            try {
+                const res = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+
+                if (!res.ok) {
+                    loginError.textContent = 'Login failed';
+                    return;
+                }
+
+                const data = await res.json();
+                accessToken = data.accessToken;
+
+                loginForm.style.display = 'none';
+                userInfo.textContent = `Logged in as ${data.displayName}`;
+                userInfo.style.display = 'block';
+                chatArea.classList.remove('hidden');
+
+                await connectSignalR();
+            } catch (err) {
+                loginError.textContent = `Error: ${err}`;
+            }
+        }
+
+        async function connectSignalR() {
+            connection = new signalR.HubConnectionBuilder()
+                .withUrl('/channelHub?access_token=' + accessToken)
+                .withAutomaticReconnect()
+                .build();
+
+            connection.on('JoinedChannel', messages => {
+                messagesDiv.innerHTML = '';
+                messages.forEach(m => addMessage(m));
+                status.textContent = `Connected — Channel ${currentChannel}`;
+            });
+
+            connection.on('NewMessage', msg => addMessage(msg));
+
+            connection.on('UserJoined', userName => {
+                const p = document.createElement('p');
+                p.className = 'system';
+                p.textContent = `${userName} joined`;
+                messagesDiv.appendChild(p);
+                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            });
+
+            connection.on('UserLeft', userName => {
+                const p = document.createElement('p');
+                p.className = 'system';
+                p.textContent = `${userName} left`;
+                messagesDiv.appendChild(p);
+                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            });
+
+            connection.onreconnecting(() => status.textContent = 'Reconnecting...');
+            connection.onreconnected(() => status.textContent = 'Connected');
+
+            try {
+                await connection.start();
+                status.textContent = 'Connected — select a channel';
+            } catch (err) {
+                status.textContent = `Connection failed: ${err}`;
+            }
+        }
+
+        function addMessage(msg) {
+            const p = document.createElement('p');
+            const span = document.createElement('span');
+            span.className = 'msg-user';
+            span.textContent = `${msg.userName}: `;
+            p.appendChild(span);
+            p.append(msg.text);
+            messagesDiv.appendChild(p);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        async function joinChannel(channelId) {
+            currentChannel = channelId;
+            document.querySelectorAll('.channel').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.channel')[channels.findIndex(c => c.id === channelId)].classList.add('active');
+
+            if (connection && connection.state === signalR.HubConnectionState.Connected) {
+                await connection.invoke('JoinChannel', channelId);
+                input.disabled = false;
+                sendBtn.disabled = false;
+                input.focus();
+            }
+        }
+
+        sendBtn.onclick = sendMessage;
+        input.onkeydown = e => { if (e.key === 'Enter') sendMessage(); };
+
+        async function sendMessage() {
+            const text = input.value.trim();
+            if (!text || !currentChannel) return;
+
+            try {
+                await connection.invoke('SendMessage', currentChannel, text);
+                input.value = '';
+            } catch (err) {
+                status.textContent = `Send failed: ${err}`;
+            }
+        }
+    </script>
+</body>
+</html>
