@@ -1,6 +1,7 @@
 using System.Text;
 using EnexabitWebSocketProject.App.Data;
 using EnexabitWebSocketProject.App.DTOs;
+using EnexabitWebSocketProject.App.Hubs;
 using EnexabitWebSocketProject.App.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
@@ -13,6 +14,8 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<TokenService>();
+builder.Services.AddScoped<MessageServices>();
+builder.Services.AddSignalR();
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -55,6 +58,8 @@ using (var scope = app.Services.CreateScope())
     await DbInitializer.SeedAsync(db);
 }
 
+app.UseDefaultFiles();
+app.UseStaticFiles();
 app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
@@ -126,6 +131,40 @@ app.MapPost("/api/auth/logout", async (HttpContext ctx, TokenService token) =>
     await token.RevokeAllUserTokensAsync(int.Parse(userIdClaim));
     ctx.Response.Cookies.Delete("refreshToken");
     return Results.Ok(new { message = "Logged out" });
+}).RequireAuthorization();
+
+app.MapHub<ChannelHub>("/channelHub");
+
+app.MapGet("/api/channels", async (AppDbContext db) =>
+{
+    var channels = await db.Channels
+        .OrderBy(c => c.Id)
+        .Select(c => new { c.Id, c.Name })
+        .ToListAsync();
+    return Results.Ok(channels);
+}).RequireAuthorization();
+
+app.MapGet("/api/channels/{channelId:int}/messages", async (int channelId, MessageServices msgService) =>
+{
+    var messages = await msgService.GetRecentMessagesAsync(channelId);
+    return Results.Ok(messages);
+}).RequireAuthorization();
+
+app.MapPost("/api/channels/{channelId:int}/messages", async (int channelId, SendMessageRequest req, HttpContext ctx, MessageServices msgService) =>
+{
+    if (string.IsNullOrWhiteSpace(req.Text))
+        return Results.BadRequest(new { error = "Text is required" });
+
+    var displayName = ctx.User.FindFirst("displayName")?.Value ?? "Unknown";
+    var message = await msgService.SaveMessageAsync(channelId, displayName, req.Text);
+
+    return Results.Created($"/api/channels/{channelId}/messages/{message.Id}", new
+    {
+        message.Id,
+        message.UserName,
+        message.Text,
+        message.CreatedAt
+    });
 }).RequireAuthorization();
 
 app.Run();
