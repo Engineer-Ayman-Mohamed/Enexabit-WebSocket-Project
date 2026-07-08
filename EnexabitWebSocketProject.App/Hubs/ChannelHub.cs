@@ -21,6 +21,12 @@ public class ChannelHub : Hub
 
     public async Task JoinChannel(int channelId)
     {
+        if (!await _messageService.ChannelExistsAsync(channelId))
+        {
+            await Clients.Caller.SendAsync("Error", "Channel not found");
+            return;
+        }
+
         var connectionId = Context.ConnectionId;
         var displayName = Context.User?.FindFirst("displayName")?.Value ?? "Unknown";
 
@@ -37,6 +43,18 @@ public class ChannelHub : Hub
 
     public async Task SendMessage(int channelId, string text)
     {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            await Clients.Caller.SendAsync("Error", "Message text cannot be empty");
+            return;
+        }
+
+        if (!await _messageService.ChannelExistsAsync(channelId))
+        {
+            await Clients.Caller.SendAsync("Error", "Channel not found");
+            return;
+        }
+
         var displayName = Context.User?.FindFirst("displayName")?.Value ?? "Unknown";
         var message = await _messageService.SaveMessageAsync(channelId, displayName, text);
 

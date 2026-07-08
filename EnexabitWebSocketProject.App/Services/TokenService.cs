@@ -19,7 +19,7 @@ public class TokenService
         _config = config;
         _db = db;
     }
-    
+
     public string GenerateAccessToken(User user)
     {
         var key = new SymmetricSecurityKey(

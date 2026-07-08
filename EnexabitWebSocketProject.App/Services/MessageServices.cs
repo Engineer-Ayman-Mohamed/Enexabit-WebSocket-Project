@@ -23,6 +23,11 @@ public class MessageServices
             .ToListAsync();
     }
 
+    public async Task<bool> ChannelExistsAsync(int channelId)
+    {
+        return await _db.Channels.AnyAsync(c => c.Id == channelId);
+    }
+
     public async Task<Message> SaveMessageAsync(int channelId, string userName, string text)
     {
         var cleanText = Sanitizer.StripHtml(text);

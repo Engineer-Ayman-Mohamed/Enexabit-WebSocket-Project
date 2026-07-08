@@ -172,10 +172,13 @@ app.MapGet("/api/channels/{channelId:int}/messages", async (int channelId, Messa
     return Results.Ok(messages);
 }).RequireAuthorization();
 
-app.MapPost("/api/channels/{channelId:int}/messages", async (int channelId, SendMessageRequest req, HttpContext ctx, MessageServices msgService) =>
+app.MapPost("/api/channels/{channelId:int}/messages", async (int channelId, SendMessageRequest req, HttpContext ctx, MessageServices msgService, AppDbContext db) =>
 {
     if (string.IsNullOrWhiteSpace(req.Text))
         return Results.BadRequest(new { error = "Text is required" });
+
+    if (!await db.Channels.AnyAsync(c => c.Id == channelId))
+        return Results.NotFound(new { error = "Channel not found" });
 
     var displayName = ctx.User.FindFirst("displayName")?.Value ?? "Unknown";
     var message = await msgService.SaveMessageAsync(channelId, displayName, req.Text);
