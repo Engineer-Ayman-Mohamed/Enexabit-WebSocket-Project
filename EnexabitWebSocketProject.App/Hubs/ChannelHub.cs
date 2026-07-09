@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using EnexabitWebSocketProject.App.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -17,9 +18,10 @@ namespace EnexabitWebSocketProject.App.Hubs;
 [Authorize]
 public class ChannelHub : Hub
 {
-    private record UserConnection(string DisplayName, HashSet<int> Channels);
+    private record UserConnection(string DisplayName, HashSet<int> Channels, string ClientType);
 
     private static readonly ConcurrentDictionary<string, UserConnection> _connections = new();
+    private static readonly ConcurrentDictionary<string, string> _clientTypes = new();
 
     private readonly MessageServices _messageService;
 
@@ -27,6 +29,20 @@ public class ChannelHub : Hub
     public ChannelHub(MessageServices messageService)
     {
         _messageService = messageService;
+    }
+
+    /// <summary>
+    /// Called when a new connection is established.
+    /// Reads the <c>X-Client-Type</c> header to determine the client device type (mobile/web).
+    /// </summary>
+    public override async Task OnConnectedAsync()
+    {
+        var httpContext = Context.GetHttpContext();
+        var clientType = httpContext?.Request.Headers["X-Client-Type"].FirstOrDefault() ?? "web";
+        _clientTypes[Context.ConnectionId] = clientType;
+
+        Console.WriteLine($"[{clientType}] connected: {Context.ConnectionId}");
+        await base.OnConnectedAsync();
     }
 
     /// <summary>
@@ -49,9 +65,10 @@ public class ChannelHub : Hub
 
         var connectionId = Context.ConnectionId;
         var displayName = Context.User?.FindFirst("displayName")?.Value ?? "Unknown";
+        var clientType = _clientTypes.GetValueOrDefault(connectionId, "web");
 
         _connections.AddOrUpdate(connectionId,
-            _ => new UserConnection(displayName, [channelId]),
+            _ => new UserConnection(displayName, [channelId], clientType),
             (_, uc) => { uc.Channels.Add(channelId); return uc; });
 
         await Groups.AddToGroupAsync(connectionId, channelId.ToString());
@@ -105,6 +122,8 @@ public class ChannelHub : Hub
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
         var connectionId = Context.ConnectionId;
+
+        _clientTypes.TryRemove(connectionId, out _);
 
         if (_connections.TryRemove(connectionId, out var userConnection))
         {
