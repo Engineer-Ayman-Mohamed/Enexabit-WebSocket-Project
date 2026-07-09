@@ -1,4 +1,7 @@
-﻿namespace EnexabitWebSocketProject.App.Models;
+﻿using System;
+using System.Collections.Generic;
+
+namespace EnexabitWebSocketProject.App.Models;
 
 /// <summary>Represents a registered chat user account.</summary>
 public class User

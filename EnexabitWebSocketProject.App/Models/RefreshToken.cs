@@ -1,4 +1,6 @@
-﻿namespace EnexabitWebSocketProject.App.Models;
+﻿using System;
+
+namespace EnexabitWebSocketProject.App.Models;
 
 /// <summary>
 /// A refresh token used for silent token rotation.

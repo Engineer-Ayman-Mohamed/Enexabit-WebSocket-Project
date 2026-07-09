@@ -1,4 +1,6 @@
-﻿namespace EnexabitWebSocketProject.App.Models;
+﻿using System;
+
+namespace EnexabitWebSocketProject.App.Models;
 
 /// <summary>A single chat message posted to a channel.</summary>
 public class Message

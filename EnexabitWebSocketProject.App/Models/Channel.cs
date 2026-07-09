@@ -1,4 +1,6 @@
-﻿namespace EnexabitWebSocketProject.App.Models;
+﻿using System.Collections.Generic;
+
+namespace EnexabitWebSocketProject.App.Models;
 
 /// <summary>Represents a named chat channel (e.g. general, tech, random).</summary>
 public class Channel
