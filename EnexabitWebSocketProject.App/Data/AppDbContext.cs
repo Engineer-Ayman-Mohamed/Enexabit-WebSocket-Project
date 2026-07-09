@@ -3,16 +3,26 @@ using Microsoft.EntityFrameworkCore;
 
 namespace EnexabitWebSocketProject.App.Data;
 
+/// <summary>Entity Framework Core database context for the chat application.</summary>
 public class AppDbContext : DbContext
 {
+    /// <summary>Registered user accounts.</summary>
     public DbSet<User> Users => Set<User>();
+
+    /// <summary>Refresh tokens for JWT rotation and theft detection.</summary>
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+
+    /// <summary>Chat channels (seeded with 5 defaults: general, random, tech, support, off-topic).</summary>
     public DbSet<Channel> Channels => Set<Channel>();
+
+    /// <summary>Chat messages posted to channels.</summary>
     public DbSet<Message> Messages => Set<Message>();
 
+    /// <param name="options">DbContext options configured in <c>Program.cs</c> for SQL Server.</param>
     public AppDbContext(DbContextOptions<AppDbContext> options)
         : base(options) { }
 
+    /// <summary>Configures entity relationships and seeds initial channel data.</summary>
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<RefreshToken>()

@@ -116,8 +116,8 @@ app.Use(async (context, next) =>
     await next();
 });
 
-    app.UseSwagger();
-    app.UseSwaggerUI();
+app.UseSwagger();
+app.UseSwaggerUI();
 app.MapPost("/api/auth/register", async (RegisterRequest req, AuthService auth) =>
 {
     var (user, error) = await auth.RegisterAsync(req.Username, req.Password, req.DisplayName);
