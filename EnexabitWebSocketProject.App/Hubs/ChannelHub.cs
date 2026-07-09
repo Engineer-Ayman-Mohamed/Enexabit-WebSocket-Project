@@ -1,10 +1,19 @@
-﻿using System.Collections.Concurrent;
+﻿using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 using EnexabitWebSocketProject.App.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 
 namespace EnexabitWebSocketProject.App.Hubs;
 
+/// <summary>
+/// SignalR hub for real-time channel-based chat.
+/// Requires JWT authentication via the <c>[Authorize]</c> attribute.
+/// Connections are tracked in a <see cref="ConcurrentDictionary{TKey,TValue}"/>
+/// to enable reverse lookup (connection → channels) on disconnect.
+/// </summary>
 [Authorize]
 public class ChannelHub : Hub
 {
@@ -14,11 +23,22 @@ public class ChannelHub : Hub
 
     private readonly MessageServices _messageService;
 
+    /// <param name="messageService">Service for message persistence and channel validation.</param>
     public ChannelHub(MessageServices messageService)
     {
         _messageService = messageService;
     }
 
+    /// <summary>
+    /// Joins a named channel group, loads recent messages, and notifies other members.
+    /// </summary>
+    /// <param name="channelId">The channel ID to join.</param>
+    /// <returns>A task that completes when the channel is joined and history is sent.</returns>
+    /// <remarks>
+    /// If the channel does not exist, the caller receives an <c>"Error"</c> event.
+    /// On success, the caller receives a <c>"JoinedChannel"</c> event with message history,
+    /// and other group members receive a <c>"UserJoined"</c> event.
+    /// </remarks>
     public async Task JoinChannel(int channelId)
     {
         if (!await _messageService.ChannelExistsAsync(channelId))
@@ -41,6 +61,17 @@ public class ChannelHub : Hub
         await Clients.OthersInGroup(channelId.ToString()).SendAsync("UserJoined", displayName);
     }
 
+    /// <summary>
+    /// Sends a message to the specified channel.
+    /// The sender's display name is extracted from the JWT. HTML is stripped for XSS prevention.
+    /// </summary>
+    /// <param name="channelId">The target channel ID.</param>
+    /// <param name="text">The message body (empty text is rejected).</param>
+    /// <returns>A task that completes when the message is persisted and broadcast.</returns>
+    /// <remarks>
+    /// On success, all group members receive a <c>"NewMessage"</c> event.
+    /// If validation fails, the caller receives an <c>"Error"</c> event.
+    /// </remarks>
     public async Task SendMessage(int channelId, string text)
     {
         if (string.IsNullOrWhiteSpace(text))
@@ -67,6 +98,10 @@ public class ChannelHub : Hub
         });
     }
 
+    /// <summary>
+    /// Called when a connection disconnects. Removes the connection from tracking,
+    /// leaves all joined groups, and broadcasts <c>"UserLeft"</c> to affected channels.
+    /// </summary>
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
         var connectionId = Context.ConnectionId;

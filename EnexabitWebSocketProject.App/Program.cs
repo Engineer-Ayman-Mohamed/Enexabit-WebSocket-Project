@@ -60,7 +60,7 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("WebApp", policy =>
     {
-        policy.WithOrigins("http://localhost:5253")
+        policy.WithOrigins("http://localhost:5253", "https://enexabitwebsocket.runasp.net")
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials();
@@ -108,23 +108,16 @@ app.UseAuthorization();
 
 app.Use(async (context, next) =>
 {
-    if (!context.Request.Path.StartsWithSegments("/swagger"))
-    {
-        context.Response.Headers.Append("Content-Security-Policy",
-            "default-src 'self'; " +
-            "script-src 'self' https://cdnjs.cloudflare.com; " +
-            "style-src 'self' 'unsafe-inline'; " +
-            "connect-src 'self' ws://localhost:5253");
-    }
+    context.Response.Headers.Append("Content-Security-Policy",
+        "default-src 'self'; " +
+        "script-src 'self' https://cdnjs.cloudflare.com 'unsafe-inline'; " +
+        "style-src 'self' 'unsafe-inline'; " +
+        "connect-src 'self' ws://localhost:5253 wss://enexabitwebsocket.runasp.net");
     await next();
 });
 
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
-
+app.UseSwagger();
+app.UseSwaggerUI();
 app.MapPost("/api/auth/register", async (RegisterRequest req, AuthService auth) =>
 {
     var (user, error) = await auth.RegisterAsync(req.Username, req.Password, req.DisplayName);
