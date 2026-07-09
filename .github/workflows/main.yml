@@ -11,6 +11,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Build Flutter Web
+        run: |
+          cd channels_ws
+          flutter build web --base-href=/flutter/ --release
+          xcopy /E /I build\web\* ..\EnexabitWebSocketProject.App\wwwroot\flutter\*
+
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
