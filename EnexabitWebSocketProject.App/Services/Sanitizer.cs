@@ -7,7 +7,7 @@ public static partial class Sanitizer
 {
     /// <summary>Compiled regex matching any HTML tag: <c>&lt;...&gt;</c>.</summary>
     [GeneratedRegex(@"<[^>]*>", RegexOptions.Compiled)]
-    private static partial Regex HtmlTagRegex();
+    private static partial Regex HtmlTagRegex(); 
 
     /// <summary>Removes all HTML tags from the input string and trims whitespace.</summary>
     /// <param name="input">Raw user input that may contain HTML.</param>
