@@ -60,7 +60,11 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("WebApp", policy =>
     {
-        policy.WithOrigins("http://localhost:5253", "https://enexabitwebsocket.runasp.net")
+        policy.WithOrigins(
+                "http://localhost:5253",
+                "https://enexabitwebsocket.runasp.net",
+                "http://localhost:5173"
+        )
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials();
@@ -132,6 +136,7 @@ app.MapPost("/api/auth/login", async (LoginRequest req, AuthService auth, TokenS
     if (user is null)
         return Results.Unauthorized();
 
+    var clientType = ctx.Request.Headers["X-Client-Type"].FirstOrDefault() ?? "web";
     var accessToken = token.GenerateAccessToken(user);
     var refreshToken = await token.GenerateRefreshTokenAsync(user.Id);
 
@@ -146,13 +151,26 @@ app.MapPost("/api/auth/login", async (LoginRequest req, AuthService auth, TokenS
     return Results.Ok(new LoginResponse
     {
         AccessToken = accessToken,
-        DisplayName = user.DisplayName
+        DisplayName = user.DisplayName,
+        RefreshToken = clientType.Equals("mobile", StringComparison.OrdinalIgnoreCase) ? refreshToken : null
     });
 });
 
 app.MapPost("/api/auth/refresh", async (HttpContext ctx, TokenService token) =>
 {
+    var clientType = ctx.Request.Headers["X-Client-Type"].FirstOrDefault() ?? "web";
+
     var oldToken = ctx.Request.Cookies["refreshToken"];
+
+    if (string.IsNullOrEmpty(oldToken))
+        oldToken = ctx.Request.Headers["X-Refresh-Token"].FirstOrDefault();
+
+    if (string.IsNullOrEmpty(oldToken) && ctx.Request.HasJsonContentType())
+    {
+        var body = await ctx.Request.ReadFromJsonAsync<RefreshRequest>();
+        oldToken = body?.RefreshToken;
+    }
+
     if (string.IsNullOrEmpty(oldToken))
         return Results.Unauthorized();
 
@@ -173,17 +191,34 @@ app.MapPost("/api/auth/refresh", async (HttpContext ctx, TokenService token) =>
         Expires = DateTime.UtcNow.AddDays(7)
     });
 
+    if (clientType.Equals("mobile", StringComparison.OrdinalIgnoreCase))
+        return Results.Ok(new { accessToken = newAccessToken, refreshToken = newRefreshToken });
+
     return Results.Ok(new { accessToken = newAccessToken });
 });
 
-app.MapPost("/api/auth/logout", async (HttpContext ctx, TokenService token) =>
+app.MapPost("/api/auth/logout", async (HttpContext ctx, TokenService token, AppDbContext db) =>
 {
     var userIdClaim = ctx.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
     if (userIdClaim is null)
         return Results.Unauthorized();
 
-    await token.RevokeAllUserTokensAsync(int.Parse(userIdClaim));
+    var userId = int.Parse(userIdClaim);
+    await token.RevokeAllUserTokensAsync(userId);
+
     ctx.Response.Cookies.Delete("refreshToken");
+
+    var refreshToken = ctx.Request.Headers["X-Refresh-Token"].FirstOrDefault();
+    if (!string.IsNullOrEmpty(refreshToken))
+    {
+        var stored = await db.RefreshTokens.FirstOrDefaultAsync(rt => rt.Token == refreshToken && rt.UserId == userId);
+        if (stored is not null)
+        {
+            stored.RevokedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+        }
+    }
+
     return Results.Ok(new { message = "Logged out" });
 }).RequireAuthorization();
 
