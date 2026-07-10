@@ -64,7 +64,7 @@ builder.Services.AddCors(options =>
                 "http://localhost:5253",
                 "https://enexabitwebsocket.runasp.net",
                 "http://localhost:5173",
-                "https://channel-chat-sand.vercel.app"
+                "https://channel-chat-two.vercel.app"
         )
               .AllowAnyHeader()
               .AllowAnyMethod()
