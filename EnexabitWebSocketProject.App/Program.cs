@@ -62,8 +62,9 @@ builder.Services.AddCors(options =>
     {
         policy.WithOrigins(
                 "http://localhost:5253",
-                "https://enexabitwebsocket.runasp.net",
+                "http://localhost:3000",
                 "http://localhost:5173",
+                "https://enexabitwebsocket.runasp.net",
                 "https://channel-chat-two.vercel.app"
         )
               .AllowAnyHeader()
