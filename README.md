@@ -1,6 +1,6 @@
 # Channel Chat — Real-Time WebSocket Messaging Platform
 
-A full-stack real-time chat application built with ASP.NET Core Minimal API, JWT authentication with refresh token rotation, SignalR WebSocket messaging, and automated CI/CD deployment to Monster ASP.NET.
+A full-stack real-time chat application built with ASP.NET Core Minimal API, JWT authentication with dual-mode refresh token rotation (cookie + header), SignalR WebSocket messaging, Flutter Web UI, and automated CI/CD deployment to Monster ASP.NET.
 
 **Author:** Engineer Ayman Mohamed
 
@@ -14,10 +14,12 @@ A full-stack real-time chat application built with ASP.NET Core Minimal API, JWT
 - [SignalR Flow](#signalr-flow)
 - [REST API Endpoints](#rest-api-endpoints)
 - [Project Architecture](#project-architecture)
+- [Client Libraries](#client-libraries)
 - [Build Phases](#build-phases)
 - [Deployment Architecture](#deployment-architecture)
 - [Live URL & Test Credentials](#live-url--test-credentials)
 - [Development Setup](#development-setup)
+- [Documentation](#documentation)
 
 ---
 
@@ -36,24 +38,28 @@ A full-stack real-time chat application built with ASP.NET Core Minimal API, JWT
 | API Documentation | Swagger UI (Swashbuckle 10 + Microsoft OpenApi 2) |
 | CI/CD | GitHub Actions → WebDeploy |
 | Hosting | Monster ASP.NET |
-| Frontend | Vanilla JavaScript + SignalR JS client |
+| Frontend (Web) | Flutter Web |
+| Frontend (Mobile) | Flutter (Android / iOS) |
+| Web Client (JS) | Vanilla JavaScript + `@microsoft/signalr` |
+| Dart Client | `signalr_netcore` |
+| React Client | `@microsoft/signalr` |
 
 ---
 
 ## Project Structure
 
-```
 EnexabitWebSocketProject.App/
 ├── Data/
 │   ├── AppDbContext.cs          # EF Core DbContext
 │   └── DbInitializer.cs         # Seeds channels + test users
 ├── DTOs/
 │   ├── LoginRequest.cs
-│   ├── LoginResponse.cs
+│   ├── LoginResponse.cs         # +RefreshToken? (populated for mobile)
+│   ├── RefreshRequest.cs        # Body fallback for mobile refresh
 │   ├── RegisterRequest.cs
 │   └── SendMessageRequest.cs
 ├── Hubs/
-│   └── ChannelHub.cs            # SignalR hub with [Authorize]
+│   └── ChannelHub.cs            # SignalR hub with client type tracking
 ├── Migrations/                  # EF Core migrations
 ├── Models/
 │   ├── Channel.cs
@@ -66,67 +72,85 @@ EnexabitWebSocketProject.App/
 │   ├── Sanitizer.cs             # StripHtml() XSS prevention
 │   └── TokenService.cs          # JWT generation + refresh rotation
 ├── wwwroot/
-│   └── index.html               # Chat client UI
+│   ├── index.html               # Vanilla JS chat client (legacy)
+│   └── flutterApp/              # Flutter Web build output
+│       ├── index.html
+│       ├── main.dart.js
+│       ├── flutter_bootstrap.js
+│       └── assets/
 ├── Program.cs                   # Entry point — all endpoints and middleware
 └── EnexabitWebSocketProject.App.csproj
-```
 
 ---
 
 ## Authentication Flow
 
-```
-  Client                    ASP.NET API                    SQL Server
-    │                            │                            │
-    │  POST /api/auth/register   │                            │
-    │───────────────────────────>│                            │
-    │                            │  BCrypt hash password      │
-    │                            │───────────────────────────>│
-    │                            │<───────────────────────────│
-    │<───────────────────────────│  Created                    │
-    │                            │                            │
-    │  POST /api/auth/login      │                            │
-    │───────────────────────────>│                            │
-    │                            │  Verify BCrypt hash        │
-    │                            │───────────────────────────>│
-    │                            │<───────────────────────────│
-    │                            │                            │
-    │  { accessToken }           │  Generate JWT (15min)      │
-    │  Set-Cookie: refreshToken  │  + refresh token (7 days)  │
-    │  (HttpOnly, Secure,        │───────────────────────────>│
-    │   SameSite=Strict)         │<───────────────────────────│
-    │<───────────────────────────│                            │
-    │                            │                            │
-    │  POST /api/auth/refresh    │                            │
-    │  Cookie: refreshToken      │                            │
-    │───────────────────────────>│                            │
-    │                            │  Validate + rotate token   │
-    │                            │  (revoke old, issue new)   │
-    │  { accessToken }           │───────────────────────────>│
-    │  Set-Cookie: refreshToken  │<───────────────────────────│
-    │<───────────────────────────│                            │
-    │                            │                            │
-    │  POST /api/auth/logout     │                            │
-    │  Authorization: Bearer JWT │                            │
-    │───────────────────────────>│                            │
-    │                            │  Revoke ALL user tokens    │
-    │  Clear-Cookie              │───────────────────────────>│
-    │<───────────────────────────│                            │
-```
+### Dual-Mode Token Delivery
+
+The refresh token is delivered via multiple channels, selected by priority. Web clients continue using cookies. Mobile clients opt into header/body delivery by sending `X-Client-Type: mobile`.
+
+Source Priority:
+1. Cookie         → web clients (unchanged)
+2. X-Refresh-Token header → mobile clients (recommended)
+3. JSON body      → mobile fallback
+
+### Login (POST /api/auth/login)
+
+  Client (web)                ASP.NET API                  Client (mobile)
+    │                             │                            │
+    │  POST /api/auth/login       │                            │
+    │  (no X-Client-Type)         │  POST /api/auth/login      │
+    │───────────────────────────> │  X-Client-Type: mobile     │
+    │                             │<───────────────────────────│
+    │                             │                            │
+    │  Set-Cookie: refreshToken   │  { accessToken             │
+    │  (HttpOnly, Secure,         │    displayName             │
+    │   SameSite=Strict)          │    refreshToken  }         │
+    │<───────────────────────────│───────────────────────────>│
+    │  { accessToken              │                            │
+    │    displayName              │                            │
+    │    refreshToken: null }     │                            │
+
+### Refresh (POST /api/auth/refresh)
+
+  Client (web)                ASP.NET API                  Client (mobile)
+    │                             │                            │
+    │  POST /api/auth/refresh     │                            │
+    │  Cookie: refreshToken       │  POST /api/auth/refresh    │
+    │───────────────────────────> │  X-Refresh-Token: <token>  │
+    │                             │<───────────────────────────│
+    │                             │  Validate + rotate token   │
+    │                             │                            │
+    │  { accessToken }            │  { accessToken             │
+    │<───────────────────────────│    refreshToken  }          │
+    │                             │───────────────────────────>│
+
+### Logout (POST /api/auth/logout)
+
+  Client (web)                ASP.NET API                  Client (mobile)
+    │                             │                            │
+    │  POST /api/auth/logout      │                            │
+    │  Authorization: Bearer JWT  │  Authorization: Bearer JWT │
+    │───────────────────────────> │  X-Refresh-Token: <token>  │
+    │                             │<───────────────────────────│
+    │                             │  Revoke ALL user tokens    │
+    │                             │  + specific token by value │
+    │  Clear-Cookie               │                            │
+    │<───────────────────────────│───────────────────────────>│
 
 ### Security Features
 
 - **Refresh token rotation:** Each refresh invalidates the old token and issues a new one
 - **Theft detection:** If a revoked token is reused, all user sessions are invalidated
-- **HttpOnly/Secure/SameSite=Strict** cookies for refresh tokens (inaccessible to JavaScript)
+- **HttpOnly/Secure cookie** for web clients (inaccessible to JavaScript)
+- **Dual-mode delivery:** Mobile receives token in response body via `X-Refresh-Token` header
 - **XSS prevention:** All message text runs through `Sanitizer.StripHtml()`
-- **JWT stored in memory only** (not localStorage) to prevent XSS token theft
+- **JWT stored in memory only** (web) or secure storage (mobile)
 
 ---
 
 ## SignalR Flow
 
-```
   Client                    SignalR Hub                      SQL Server
     │                            │                            │
     │  GET /channelHub           │                            │
@@ -138,7 +162,7 @@ EnexabitWebSocketProject.App/
     │  Invoke: JoinChannel(1)    │                            │
     │───────────────────────────>│                            │
     │                            │  Fetch recent messages     │
-    │  On: JoinedChannel([...])  │───────────────────────────>│
+    │  On: JoinedChannel(...)  │───────────────────────────>│
     │<───────────────────────────│<───────────────────────────│
     │                            │  Add connection to group   │
     │  On: UserJoined("Alice")   │  Broadcast to group        │
@@ -157,13 +181,16 @@ EnexabitWebSocketProject.App/
     │  Connection lost           │                            │
     │───────────────────────────>│                            │
     │  On: UserLeft("Alice")     │  OnDisconnectedAsync       │
-    │<───────────────────────────│  Remove from dictionary    │
+    │<───────────────────────────│  Cleanup client type       │
     │                            │  Broadcast to group        │
-```
+
+### Client Type Tracking
+
+On connection, the hub reads the `X-Client-Type` header (`mobile` / `web`) from the HTTP context and stores it per connection. The type is logged on connect and cleaned up on disconnect. This enables platform-specific analytics and behavior adjustments.
 
 ### Connection Tracking
 
-Connections are tracked via a `ConcurrentDictionary<string, UserConnection>` mapping SignalR connection IDs to their channel and display name. This enables proper cleanup and notifications when a user disconnects (SignalR groups lack reverse lookup on disconnect).
+Connections are tracked via a `ConcurrentDictionary<string, UserConnection>` mapping SignalR connection IDs to their display name, joined channels, and client type. This enables proper cleanup and notifications when a user disconnects.
 
 ---
 
@@ -172,9 +199,9 @@ Connections are tracked via a `ConcurrentDictionary<string, UserConnection>` map
 | Method | Path | Auth Required | Description |
 |--------|------|:---:|------------|
 | POST | `/api/auth/register` | ✗ | Create account (username, password, displayName) |
-| POST | `/api/auth/login` | ✗ | Returns JWT + sets refresh cookie |
-| POST | `/api/auth/refresh` | ✗ (cookie) | Rotates refresh token |
-| POST | `/api/auth/logout` | ✓ JWT | Revokes all refresh tokens |
+| POST | `/api/auth/login` | ✗ | Returns JWT + refresh token (cookie for web, body for mobile) |
+| POST | `/api/auth/refresh` | ✗ | Rotates refresh token (from cookie / X-Refresh-Token header / body) |
+| POST | `/api/auth/logout` | ✓ JWT | Revokes all refresh tokens (+ specific token from `X-Refresh-Token` header) |
 | GET | `/api/channels` | ✓ JWT | List all channels |
 | GET | `/api/channels/{id}/messages` | ✓ JWT | Get recent messages (last 50) |
 | POST | `/api/channels/{id}/messages` | ✓ JWT | Send a message via REST |
@@ -194,20 +221,42 @@ All JWT-protected endpoints require header: `Authorization: Bearer <token>`
 | Dependency Injection | All services registered with scoped lifetime via `AddScoped` |
 | CQRS-lite | Separate services for authentication, token management, and messaging |
 | Middleware Pipeline | CSP, auth, CORS, Swagger, and routing composed in `Program.cs` |
+| Dual-Mode Auth | Cookie-based for web, header/body-based for mobile (transparent to services) |
 
 ### Data Model
 
-```
 User (Id, Username, PasswordHash, DisplayName, CreatedAt)
   │
-  ├── RefreshToken (Id, Token, UserId, CreatedAt, ExpiresAt, IsRevoked)
+  ├── RefreshToken (Id, Token, UserId, CreatedAt, ExpiresAt, RevokedAt, ReplacedByToken)
   │
   └── Message (Id, ChannelId, UserName, Text, CreatedAt)
-
 Channel (Id, Name)
   │
   └── Message (via ChannelId)
-```
+
+---
+
+## Client Libraries
+
+### Flutter / Dart
+
+| Package | Version | Usage |
+|---------|---------|-------|
+| `signalr_netcore` | ^1.3.7 | SignalR HubConnection with `accessTokenFactory` |
+| `flutter_secure_storage` | ^9.x | Secure token persistence on Android / iOS |
+
+### React / TypeScript
+
+| Package | Version | Usage |
+|---------|---------|-------|
+| `@microsoft/signalr` | ^8.0.0 | Official SignalR client with automatic reconnect |
+
+### Common Requirements
+
+- Send `X-Client-Type: mobile` header on all requests
+- Use `X-Refresh-Token` header for refresh and logout (mobile)
+- Persist refresh token from login response body into secure storage
+- Re-join channel in `onreconnected` callback
 
 ---
 
@@ -227,7 +276,7 @@ Channel (Id, Name)
 - `AuthService`: BCrypt-based registration and authentication
 - `TokenService`: JWT generation with refresh token rotation and theft detection
 - 4 authentication endpoints: register, login, refresh, logout
-- Refresh token stored as `HttpOnly` / `Secure` / `SameSite=Strict` cookie
+- Refresh token stored as `HttpOnly` / `Secure` cookie (web) or response body (mobile)
 - JWT signing key stored in `dotnet user-secrets` (local) / environment variables (production)
 
 ### Phase 3 — SignalR Messaging Hub
@@ -235,7 +284,7 @@ Channel (Id, Name)
 - `ChannelHub` with `[Authorize]` attribute for hub-level security
 - `JoinChannel` — loads message history, adds connection to SignalR group
 - `SendMessage` — sanitizes text, persists to database, broadcasts to group
-- `OnDisconnectedAsync` — removes connection from tracking dictionary, notifies group
+- `OnConnectedAsync` / `OnDisconnectedAsync` — client type tracking and cleanup
 - Connection tracking via `ConcurrentDictionary<string, UserConnection>`
 - REST fallback endpoints for message retrieval and creation
 
@@ -257,19 +306,37 @@ Channel (Id, Name)
 
 - GitHub Actions workflow triggers on push to `main`
 - Builds and publishes on `windows-latest` runner
+- Flutter Web build step copies output to `wwwroot/flutterApp/`
 - Deploys to Monster ASP.NET via WebDeploy
 - Environment variables configured in Control Panel for connection string and JWT key
+
+### Phase 7 — Mobile & Cross-Platform Support
+
+- Dual-mode refresh token delivery (cookie + header/body)
+- `X-Client-Type` header for client platform detection
+- `X-Refresh-Token` header for mobile refresh and logout
+- Refresh token returned in login response body for mobile clients
+- Backward compatible — web clients continue using cookies unchanged
+
+### Phase 8 — Flutter Web UI
+
+- Replace vanilla JS UI with Flutter Web application
+- Hosted in `wwwroot/flutterApp/` with `<base href="/flutterApp/">`
+- Full chat experience with auto-reconnect and session persistence
+- Rebuilt via `flutter build web --base-href=/flutterApp/ --release`
 
 ---
 
 ## Deployment Architecture
 
-```
 GitHub Push (main branch)
        │
        ▼
 GitHub Actions (windows-latest)
   │
+  ├── Setup Flutter SDK
+  ├── flutter build web --base-href=/flutterApp/ --release
+  ├── Copy build output to wwwroot/flutterApp/
   ├── Setup .NET 10 SDK
   ├── dotnet restore
   ├── dotnet build --configuration Release
@@ -288,7 +355,6 @@ GitHub Actions (windows-latest)
           ConnectionStrings__         Jwt__Key          https://
           DefaultConnection                              enexabitwebsocket.
                                                          runasp.net
-```
 
 ### Environment Variables (Monster ASP.NET Control Panel)
 
@@ -304,6 +370,8 @@ GitHub Actions (windows-latest)
 ## Live URL & Test Credentials
 
 **Live Application:** [https://enexabitwebsocket.runasp.net](https://enexabitwebsocket.runasp.net)
+
+**Flutter Web App:** [https://enexabitwebsocket.runasp.net/flutterApp/](https://enexabitwebsocket.runasp.net/flutterApp/)
 
 **Swagger UI:** [https://enexabitwebsocket.runasp.net/swagger](https://enexabitwebsocket.runasp.net/swagger)
 
@@ -322,9 +390,10 @@ GitHub Actions (windows-latest)
 
 - .NET 10 SDK
 - SQL Server (local instance)
+- Flutter SDK (optional — for Flutter Web development)
 - Visual Studio 2022+ / JetBrains Rider / VS Code
 
-### Steps
+### Backend Setup
 
 ```bash
 # Clone the repository
@@ -344,13 +413,16 @@ dotnet user-secrets set "Jwt:Key" "<your-256-bit-base64-key>"
 dotnet run
 
 # Open browser at https://localhost:5001
-```
+Flutter Web Development
+cd channels_ws
 
-### Local Configuration
+# Build with correct base href
+flutter build web --base-href=/flutterApp/ --release
 
-File: `appsettings.json`
-
-```json
+# Copy to ASP.NET wwwroot
+xcopy /E /I build\web\* ..\EnexabitWebSocketProject.App\wwwroot\flutterApp\*
+Local Configuration
+File: appsettings.json
 {
   "ConnectionStrings": {
     "DefaultConnection": "Server=.\\SQLSERVER_2025;Database=EnexabitWebSocketDb;Trusted_Connection=True;TrustServerCertificate=True;"
@@ -361,10 +433,3 @@ File: `appsettings.json`
     "ExpiryInMinutes": "15"
   }
 }
-```
-
----
-
-## License
-
-MIT
