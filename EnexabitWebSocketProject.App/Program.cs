@@ -115,9 +115,13 @@ app.Use(async (context, next) =>
 {
     context.Response.Headers.Append("Content-Security-Policy",
         "default-src 'self'; " +
-        "script-src 'self' https://cdnjs.cloudflare.com 'unsafe-inline'; " +
+        "script-src 'self' https://cdnjs.cloudflare.com 'unsafe-inline' 'wasm-unsafe-eval'; " +
         "style-src 'self' 'unsafe-inline'; " +
-        "connect-src 'self' ws://localhost:5253 wss://enexabitwebsocket.runasp.net");
+        "img-src 'self' data:; " +
+        "font-src 'self'; " +
+        "connect-src 'self' ws://localhost:5253 wss://enexabitwebsocket.runasp.net; " +
+        "worker-src 'self'; " +
+        "frame-src 'self'");
     await next();
 });
 
