@@ -192,7 +192,9 @@ app.MapPost("/api/auth/refresh", async (HttpContext ctx, TokenService token) =>
     {
         HttpOnly = true,
         Secure = true,
-        SameSite = SameSiteMode.Strict,
+        SameSite = clientType.Equals("mobile")
+            ? SameSiteMode.None
+            : SameSiteMode.Strict,
         Expires = DateTime.UtcNow.AddDays(7)
     });
 
