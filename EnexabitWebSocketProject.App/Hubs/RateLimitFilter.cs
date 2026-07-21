@@ -8,8 +8,15 @@ namespace EnexabitWebSocketProject.App.Hubs;
 
 public class RateLimitFilter : IHubFilter
 {
-    private static readonly ConcurrentDictionary<string, LinkedList<DateTime>> _messageTimestamps = new();
+    private static readonly ConcurrentDictionary<string, LinkedList<long>> _messageTimestamps = new();
     private const int MaxMessagesPerMinute = 30;
+
+    private readonly IHubContext<ChannelHub> _hubContext;
+
+    public RateLimitFilter(IHubContext<ChannelHub> hubContext)
+    {
+        _hubContext = hubContext;
+    }
 
     public async ValueTask<object?> InvokeMethodAsync(
         HubInvocationContext invocationContext,
@@ -19,17 +26,18 @@ public class RateLimitFilter : IHubFilter
         {
             var connectionId = invocationContext.Context.ConnectionId;
             var timestamps = _messageTimestamps.GetOrAdd(connectionId, _ => new());
-            var now = DateTime.UtcNow;
+            var now = Environment.TickCount64;
 
             lock (timestamps)
             {
                 timestamps.AddLast(now);
-                while (timestamps.Count > 0 && (now - timestamps.First!.Value).TotalSeconds > 60)
+                while (timestamps.Count > 0 && (now - timestamps.First!.Value) > 60_000)
                     timestamps.RemoveFirst();
 
                 if (timestamps.Count > MaxMessagesPerMinute)
                 {
-                    invocationContext.Context.Abort();
+                    _ = _hubContext.Clients.Client(connectionId)
+                        .SendAsync("Error", "Rate limit exceeded. Max 30 messages per minute.");
                     return null;
                 }
             }
@@ -37,6 +45,7 @@ public class RateLimitFilter : IHubFilter
 
         return await next(invocationContext);
     }
+
     public static void Cleanup(string connectionId)
     {
         _messageTimestamps.TryRemove(connectionId, out _);

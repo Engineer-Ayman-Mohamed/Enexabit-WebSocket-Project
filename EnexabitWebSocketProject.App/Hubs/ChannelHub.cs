@@ -117,14 +117,14 @@ public class ChannelHub : Hub
             return;
         }
 
-        if (!await _messageService.ChannelExistsAsync(channelId))
+        var displayName = Context.User?.FindFirst("displayName")?.Value ?? "Unknown";
+        var message = await _messageService.SaveMessageAsync(channelId, displayName, text);
+
+        if (message is null)
         {
             await Clients.Caller.SendAsync("Error", "Channel not found");
             return;
         }
-
-        var displayName = Context.User?.FindFirst("displayName")?.Value ?? "Unknown";
-        var message = await _messageService.SaveMessageAsync(channelId, displayName, text);
 
         await Clients.Group(channelId.ToString()).SendAsync("NewMessage", new
         {

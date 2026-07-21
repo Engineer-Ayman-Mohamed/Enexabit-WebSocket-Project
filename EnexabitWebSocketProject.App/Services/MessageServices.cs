@@ -40,13 +40,17 @@ public class MessageServices
         return await _db.Channels.AnyAsync(c => c.Id == channelId);
     }
 
-    /// <summary>Sanitizes message text via <see cref="Sanitizer.StripHtml"/> and persists it.</summary>
+    /// <summary>Sanitizes message text via <see cref="Sanitizer.StripHtml"/> and persists it.
+    /// Returns <c>null</c> if the channel does not exist (atomic check+save).</summary>
     /// <param name="channelId">The channel to post in.</param>
     /// <param name="userName">Display name of the sender.</param>
     /// <param name="text">Raw message text (HTML tags are stripped).</param>
-    /// <returns>The saved message entity with a generated Id and CreatedAt timestamp.</returns>
-    public async Task<Message> SaveMessageAsync(int channelId, string userName, string text)
+    /// <returns>The saved message entity, or <c>null</c> if channel not found.</returns>
+    public async Task<Message?> SaveMessageAsync(int channelId, string userName, string text)
     {
+        if (!await _db.Channels.AnyAsync(c => c.Id == channelId))
+            return null;
+
         var cleanText = Sanitizer.StripHtml(text);
 
         var message = new Message

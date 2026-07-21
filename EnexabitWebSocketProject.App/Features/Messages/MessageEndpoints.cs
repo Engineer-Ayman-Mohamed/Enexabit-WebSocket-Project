@@ -34,6 +34,8 @@ public static class MessageEndpoints
 
         var displayName = ctx.User.FindFirst("displayName")?.Value ?? "Unknown";
         var message = await msgService.SaveMessageAsync(channelId, displayName, req.Text);
+        if (message is null)
+            return Results.NotFound(new { error = "Channel not found" });
 
         return Results.Created($"/api/channels/{channelId}/messages/{message.Id}", new
         {
