@@ -6,6 +6,7 @@ using EnexabitWebSocketProject.App.Features.Messages;
 using EnexabitWebSocketProject.App.Hubs;
 using EnexabitWebSocketProject.App.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
@@ -19,6 +20,7 @@ builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<TokenService>();
 builder.Services.AddScoped<MessageServices>();
 builder.Services.AddSignalR();
+builder.Services.AddSingleton(typeof(IHubFilter), typeof(RateLimitFilter));
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -119,10 +121,10 @@ app.UseSwagger();
 app.UseSwaggerUI();
 app.MapHub<ChannelHub>("/channelHub");
 
-app.MapGroup("/api/auth").MapAuthEndpoints();
+AuthEndpoints.Map(app.MapGroup("/api/auth"));
 
 var api = app.MapGroup("/api").RequireAuthorization();
-api.MapGroup("/channels").MapChannelEndpoints();
-api.MapGroup("/channels").MapMessageEndpoints();
+ChannelEndpoints.Map(api.MapGroup("/channels"));
+MessageEndpoints.Map(api.MapGroup("/channels"));
 
 app.Run();

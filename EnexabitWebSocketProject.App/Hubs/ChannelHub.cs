@@ -143,6 +143,7 @@ public class ChannelHub : Hub
     {
         var connectionId = Context.ConnectionId;
 
+        RateLimitFilter.Cleanup(connectionId);
         _clientTypes.TryRemove(connectionId, out _);
 
         if (_connections.TryRemove(connectionId, out var userConnection))

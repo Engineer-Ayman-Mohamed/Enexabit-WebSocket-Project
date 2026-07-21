@@ -7,17 +7,17 @@ namespace EnexabitWebSocketProject.App.Features.Channels;
 
 public static class ChannelEndpoints
 {
-    public static RouteGroupBuilder MapChannelEndpoints(this RouteGroupBuilder group)
+    public static void Map(RouteGroupBuilder group)
     {
-        group.MapGet("/", async (AppDbContext db) =>
-        {
-            var channels = await db.Channels
-                .OrderBy(c => c.Id)
-                .Select(c => new { c.Id, c.Name })
-                .ToListAsync();
-            return Results.Ok(channels);
-        }).RequireAuthorization();
+        group.MapGet("/", GetChannels).RequireAuthorization();
+    }
 
-        return group;
+    private static async Task<IResult> GetChannels(AppDbContext db)
+    {
+        var channels = await db.Channels
+            .OrderBy(c => c.Id)
+            .Select(c => new { c.Id, c.Name })
+            .ToListAsync();
+        return Results.Ok(channels);
     }
 }

@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using EnexabitWebSocketProject.App.Data;
 using EnexabitWebSocketProject.App.DTOs;
 using EnexabitWebSocketProject.App.Services;
@@ -9,34 +10,37 @@ namespace EnexabitWebSocketProject.App.Features.Messages;
 
 public static class MessageEndpoints
 {
-    public static RouteGroupBuilder MapMessageEndpoints(this RouteGroupBuilder group)
+    public static void Map(RouteGroupBuilder group)
     {
-        group.MapGet("/{channelId:int}/messages", async (int channelId, MessageServices msgService) =>
+        group.MapGet("/{channelId:int}/messages", GetMessages).RequireAuthorization();
+        group.MapPost("/{channelId:int}/messages", SendMessage).RequireAuthorization();
+    }
+
+    private static async Task<IResult> GetMessages(int channelId, MessageServices msgService)
+    {
+        var messages = await msgService.GetRecentMessagesAsync(channelId);
+        return Results.Ok(messages);
+    }
+
+    private static async Task<IResult> SendMessage(
+        int channelId, SendMessageRequest req, HttpContext ctx,
+        MessageServices msgService, AppDbContext db)
+    {
+        if (string.IsNullOrWhiteSpace(req.Text))
+            return Results.BadRequest(new { error = "Text is required" });
+
+        if (!await db.Channels.AnyAsync(c => c.Id == channelId))
+            return Results.NotFound(new { error = "Channel not found" });
+
+        var displayName = ctx.User.FindFirst("displayName")?.Value ?? "Unknown";
+        var message = await msgService.SaveMessageAsync(channelId, displayName, req.Text);
+
+        return Results.Created($"/api/channels/{channelId}/messages/{message.Id}", new
         {
-            var messages = await msgService.GetRecentMessagesAsync(channelId);
-            return Results.Ok(messages);
-        }).RequireAuthorization();
-
-        group.MapPost("/{channelId:int}/messages", async (int channelId, SendMessageRequest req, HttpContext ctx, MessageServices msgService, AppDbContext db) =>
-        {
-            if (string.IsNullOrWhiteSpace(req.Text))
-                return Results.BadRequest(new { error = "Text is required" });
-
-            if (!await db.Channels.AnyAsync(c => c.Id == channelId))
-                return Results.NotFound(new { error = "Channel not found" });
-
-            var displayName = ctx.User.FindFirst("displayName")?.Value ?? "Unknown";
-            var message = await msgService.SaveMessageAsync(channelId, displayName, req.Text);
-
-            return Results.Created($"/api/channels/{channelId}/messages/{message.Id}", new
-            {
-                message.Id,
-                message.UserName,
-                message.Text,
-                message.CreatedAt
-            });
-        }).RequireAuthorization();
-
-        return group;
+            message.Id,
+            message.UserName,
+            message.Text,
+            message.CreatedAt
+        });
     }
 }
