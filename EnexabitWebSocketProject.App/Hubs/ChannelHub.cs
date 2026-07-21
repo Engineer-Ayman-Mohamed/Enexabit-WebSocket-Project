@@ -57,6 +57,12 @@ public class ChannelHub : Hub
     /// </remarks>
     public async Task JoinChannel(int channelId)
     {
+        if (channelId <= 0)
+        {
+            await Clients.Caller.SendAsync("Error", "Invalid channel ID");
+            return;
+        }
+
         if (!await _messageService.ChannelExistsAsync(channelId))
         {
             await Clients.Caller.SendAsync("Error", "Channel not found");
@@ -93,9 +99,21 @@ public class ChannelHub : Hub
     /// </remarks>
     public async Task SendMessage(int channelId, string text)
     {
+        if (channelId <= 0)
+        {
+            await Clients.Caller.SendAsync("Error", "Invalid channel ID");
+            return;
+        }
+
         if (string.IsNullOrWhiteSpace(text))
         {
             await Clients.Caller.SendAsync("Error", "Message text cannot be empty");
+            return;
+        }
+
+        if (text.Length > 4000)
+        {
+            await Clients.Caller.SendAsync("Error", "Message exceeds 4000 character limit");
             return;
         }
 
