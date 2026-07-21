@@ -1,18 +1,12 @@
-using System;
-using System.Linq;
 using System.Text;
-using System.Threading.Tasks;
 using EnexabitWebSocketProject.App.Data;
-using EnexabitWebSocketProject.App.DTOs;
+using EnexabitWebSocketProject.App.Features.Auth;
+using EnexabitWebSocketProject.App.Features.Channels;
+using EnexabitWebSocketProject.App.Features.Messages;
 using EnexabitWebSocketProject.App.Hubs;
 using EnexabitWebSocketProject.App.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 
@@ -123,142 +117,12 @@ app.Use(async (context, next) =>
 
 app.UseSwagger();
 app.UseSwaggerUI();
-app.MapPost("/api/auth/register", async (RegisterRequest req, AuthService auth) =>
-{
-    var (user, error) = await auth.RegisterAsync(req.Username, req.Password, req.DisplayName);
-    if (error is not null)
-        return Results.Conflict(new { error });
-    return Results.Created($"/users/{user!.Id}", new { user.Username, user.DisplayName });
-});
-
-app.MapPost("/api/auth/login", async (LoginRequest req, AuthService auth, TokenService token, HttpContext ctx) =>
-{
-    var user = await auth.AuthenticateAsync(req.Username, req.Password);
-    if (user is null)
-        return Results.Unauthorized();
-
-    var clientType = ctx.Request.Headers["X-Client-Type"].FirstOrDefault() ?? "web";
-    var accessToken = token.GenerateAccessToken(user);
-    var refreshToken = await token.GenerateRefreshTokenAsync(user.Id);
-
-    ctx.Response.Cookies.Append("refreshToken", refreshToken, new CookieOptions
-    {
-        HttpOnly = true,
-        Secure = true,
-        SameSite = SameSiteMode.Strict,
-        Expires = DateTime.UtcNow.AddDays(7)
-    });
-
-    return Results.Ok(new LoginResponse
-    {
-        AccessToken = accessToken,
-        DisplayName = user.DisplayName,
-        RefreshToken = clientType.Equals("mobile", StringComparison.OrdinalIgnoreCase) ? refreshToken : null
-    });
-});
-
-app.MapPost("/api/auth/refresh", async (HttpContext ctx, TokenService token) =>
-{
-    var clientType = ctx.Request.Headers["X-Client-Type"].FirstOrDefault() ?? "web";
-
-    var oldToken = ctx.Request.Cookies["refreshToken"];
-
-    if (string.IsNullOrEmpty(oldToken))
-        oldToken = ctx.Request.Headers["X-Refresh-Token"].FirstOrDefault();
-
-    if (string.IsNullOrEmpty(oldToken) && ctx.Request.HasJsonContentType())
-    {
-        var body = await ctx.Request.ReadFromJsonAsync<RefreshRequest>();
-        oldToken = body?.RefreshToken;
-    }
-
-    if (string.IsNullOrEmpty(oldToken))
-        return Results.Unauthorized();
-
-    var result = await token.RotateRefreshTokenAsync(oldToken);
-    if (result is null)
-    {
-        ctx.Response.Cookies.Delete("refreshToken");
-        return Results.Unauthorized();
-    }
-
-    var (newAccessToken, newRefreshToken) = result.Value;
-
-    ctx.Response.Cookies.Append("refreshToken", newRefreshToken, new CookieOptions
-    {
-        HttpOnly = true,
-        Secure = true,
-        SameSite = clientType.Equals("mobile")
-            ? SameSiteMode.None
-            : SameSiteMode.Strict,
-        Expires = DateTime.UtcNow.AddDays(7)
-    });
-
-    if (clientType.Equals("mobile", StringComparison.OrdinalIgnoreCase))
-        return Results.Ok(new { accessToken = newAccessToken, refreshToken = newRefreshToken });
-
-    return Results.Ok(new { accessToken = newAccessToken });
-});
-
-app.MapPost("/api/auth/logout", async (HttpContext ctx, TokenService token, AppDbContext db) =>
-{
-    var userIdClaim = ctx.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-    if (userIdClaim is null)
-        return Results.Unauthorized();
-
-    var userId = int.Parse(userIdClaim);
-    await token.RevokeAllUserTokensAsync(userId);
-
-    ctx.Response.Cookies.Delete("refreshToken");
-
-    var refreshToken = ctx.Request.Headers["X-Refresh-Token"].FirstOrDefault();
-    if (!string.IsNullOrEmpty(refreshToken))
-    {
-        var stored = await db.RefreshTokens.FirstOrDefaultAsync(rt => rt.Token == refreshToken && rt.UserId == userId);
-        if (stored is not null)
-        {
-            stored.RevokedAt = DateTime.UtcNow;
-            await db.SaveChangesAsync();
-        }
-    }
-
-    return Results.Ok(new { message = "Logged out" });
-}).RequireAuthorization();
-
 app.MapHub<ChannelHub>("/channelHub");
 
-app.MapGet("/api/channels", async (AppDbContext db) =>
-{
-    var channels = await db.Channels
-        .OrderBy(c => c.Id)
-        .Select(c => new { c.Id, c.Name })
-        .ToListAsync();
-    return Results.Ok(channels);
-}).RequireAuthorization();
+app.MapGroup("/api/auth").MapAuthEndpoints();
 
-app.MapGet("/api/channels/{channelId:int}/messages", async (int channelId, MessageServices msgService) =>
-{
-    var messages = await msgService.GetRecentMessagesAsync(channelId);
-    return Results.Ok(messages);
-}).RequireAuthorization();
+var api = app.MapGroup("/api").RequireAuthorization();
+api.MapGroup("/channels").MapChannelEndpoints();
+api.MapGroup("/channels").MapMessageEndpoints();
 
-app.MapPost("/api/channels/{channelId:int}/messages", async (int channelId, SendMessageRequest req, HttpContext ctx, MessageServices msgService, AppDbContext db) =>
-{
-    if (string.IsNullOrWhiteSpace(req.Text))
-        return Results.BadRequest(new { error = "Text is required" });
-
-    if (!await db.Channels.AnyAsync(c => c.Id == channelId))
-        return Results.NotFound(new { error = "Channel not found" });
-
-    var displayName = ctx.User.FindFirst("displayName")?.Value ?? "Unknown";
-    var message = await msgService.SaveMessageAsync(channelId, displayName, req.Text);
-
-    return Results.Created($"/api/channels/{channelId}/messages/{message.Id}", new
-    {
-        message.Id,
-        message.UserName,
-        message.Text,
-        message.CreatedAt
-    });
-}).RequireAuthorization();
 app.Run();

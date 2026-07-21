@@ -74,7 +74,9 @@ public class ChannelHub : Hub
         await Groups.AddToGroupAsync(connectionId, channelId.ToString());
 
         var recentMessages = await _messageService.GetRecentMessagesAsync(channelId);
+        
         await Clients.Caller.SendAsync("JoinedChannel", recentMessages);
+        
         await Clients.OthersInGroup(channelId.ToString()).SendAsync("UserJoined", displayName);
     }
 
