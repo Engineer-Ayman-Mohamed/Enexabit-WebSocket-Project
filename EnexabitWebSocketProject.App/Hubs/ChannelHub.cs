@@ -70,12 +70,14 @@ public class ChannelHub : Hub
         _connections.AddOrUpdate(connectionId,
             _ => new UserConnection(displayName, [channelId], clientType),
             (_, uc) => { uc.Channels.Add(channelId); return uc; });
-
+        
         await Groups.AddToGroupAsync(connectionId, channelId.ToString());
-
+        
         var recentMessages = await _messageService.GetRecentMessagesAsync(channelId);
+        
         await Clients.Caller.SendAsync("JoinedChannel", recentMessages);
-        await Clients.OthersInGroup(channelId.ToString()).SendAsync("UserJoined", displayName);
+        
+        await Clients.OthersInGroup(channelId.ToString()) .SendAsync("UserJoined", displayName);
     }
 
     /// <summary>
@@ -91,20 +93,32 @@ public class ChannelHub : Hub
     /// </remarks>
     public async Task SendMessage(int channelId, string text)
     {
+        if (channelId <= 0)
+        {
+            await Clients.Caller.SendAsync("Error", "Invalid channel ID");
+            return;
+        }
+
         if (string.IsNullOrWhiteSpace(text))
         {
             await Clients.Caller.SendAsync("Error", "Message text cannot be empty");
             return;
         }
 
-        if (!await _messageService.ChannelExistsAsync(channelId))
+        if (text.Length > 4000)
         {
-            await Clients.Caller.SendAsync("Error", "Channel not found");
+            await Clients.Caller.SendAsync("Error", "Message exceeds 4000 character limit");
             return;
         }
 
         var displayName = Context.User?.FindFirst("displayName")?.Value ?? "Unknown";
         var message = await _messageService.SaveMessageAsync(channelId, displayName, text);
+
+        if (message is null)
+        {
+            await Clients.Caller.SendAsync("Error", "Channel not found");
+            return;
+        }
 
         await Clients.Group(channelId.ToString()).SendAsync("NewMessage", new
         {
@@ -123,6 +137,7 @@ public class ChannelHub : Hub
     {
         var connectionId = Context.ConnectionId;
 
+        RateLimitFilter.Cleanup(connectionId);
         _clientTypes.TryRemove(connectionId, out _);
 
         if (_connections.TryRemove(connectionId, out var userConnection))
