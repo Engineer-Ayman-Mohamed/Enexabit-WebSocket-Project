@@ -19,7 +19,23 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<TokenService>();
 builder.Services.AddScoped<MessageServices>();
-builder.Services.AddSignalR();
+var signalR = builder.Services.AddSignalR();
+var redisConnection = builder.Configuration.GetConnectionString("Redis");
+if (!string.IsNullOrEmpty(redisConnection))
+{
+    try
+    {
+        signalR.AddStackExchangeRedis(redisConnection, options =>
+        {
+            options.Configuration.ChannelPrefix =
+                StackExchange.Redis.RedisChannel.Literal("Enexabit");
+        });
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Redis backplane disabled: {ex.Message}. Running in-memory mode.");
+    }
+}
 builder.Services.AddSingleton(typeof(IHubFilter), typeof(RateLimitFilter));
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -100,22 +116,24 @@ using (var scope = app.Services.CreateScope())
     await DbInitializer.SeedAsync(db);
 }
 
+app.Use(async (context, next) =>
+{
+    var origin = $"{context.Request.Scheme}://{context.Request.Host}";
+    context.Response.Headers.Append("Content-Security-Policy",
+        "default-src 'self'; " +
+        "script-src 'self' https://cdnjs.cloudflare.com 'unsafe-inline'; " +
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+        "font-src 'self' https://fonts.gstatic.com; " +
+        $"connect-src 'self' {origin.Replace("http", "ws")} {origin.Replace("http", "wss")} wss://enexabitwebsocket.runasp.net");
+    await next();
+});
+
 app.UseDefaultFiles();
 app.UseStaticFiles();
 app.UseCors("WebApp");
 app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
-
-app.Use(async (context, next) =>
-{
-    context.Response.Headers.Append("Content-Security-Policy",
-        "default-src 'self'; " +
-        "script-src 'self' https://cdnjs.cloudflare.com 'unsafe-inline'; " +
-        "style-src 'self' 'unsafe-inline'; " +
-        "connect-src 'self' ws://localhost:5253 wss://enexabitwebsocket.runasp.net");
-    await next();
-});
 
 app.UseSwagger();
 app.UseSwaggerUI();

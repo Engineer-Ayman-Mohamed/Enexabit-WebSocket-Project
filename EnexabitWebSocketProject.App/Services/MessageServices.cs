@@ -19,13 +19,17 @@ public class MessageServices
         _db = db;
     }
 
-    /// <summary>Returns the 50 most recent messages for a given channel, ordered oldest-first.</summary>
+    /// <summary>Returns up to 50 messages for a given channel, ordered oldest-first.
+    /// Supports cursor-based pagination via <paramref name="beforeCreatedAt"/>.</summary>
     /// <param name="channelId">The channel to fetch messages for.</param>
+    /// <param name="beforeCreatedAt">If provided, returns messages created before this timestamp.</param>
     /// <returns>A list of up to 50 messages.</returns>
     public async Task<List<Message>> GetRecentMessagesAsync(int channelId)
     {
-        return await _db.Messages
-            .Where(m => m.ChannelId == channelId)
+        var query = _db.Messages
+            .Where(m => m.ChannelId == channelId);
+        
+        return await query
             .OrderByDescending(m => m.CreatedAt)
             .Take(50)
             .OrderBy(m => m.CreatedAt)

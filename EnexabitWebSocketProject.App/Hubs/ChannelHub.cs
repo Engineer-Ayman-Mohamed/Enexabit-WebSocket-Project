@@ -57,12 +57,6 @@ public class ChannelHub : Hub
     /// </remarks>
     public async Task JoinChannel(int channelId)
     {
-        if (channelId <= 0)
-        {
-            await Clients.Caller.SendAsync("Error", "Invalid channel ID");
-            return;
-        }
-
         if (!await _messageService.ChannelExistsAsync(channelId))
         {
             await Clients.Caller.SendAsync("Error", "Channel not found");
@@ -76,14 +70,14 @@ public class ChannelHub : Hub
         _connections.AddOrUpdate(connectionId,
             _ => new UserConnection(displayName, [channelId], clientType),
             (_, uc) => { uc.Channels.Add(channelId); return uc; });
-
+        
         await Groups.AddToGroupAsync(connectionId, channelId.ToString());
-
+        
         var recentMessages = await _messageService.GetRecentMessagesAsync(channelId);
         
         await Clients.Caller.SendAsync("JoinedChannel", recentMessages);
         
-        await Clients.OthersInGroup(channelId.ToString()).SendAsync("UserJoined", displayName);
+        await Clients.OthersInGroup(channelId.ToString()) .SendAsync("UserJoined", displayName);
     }
 
     /// <summary>
