@@ -151,4 +151,14 @@ public class ChannelHub : Hub
 
         await base.OnDisconnectedAsync(exception);
     }
+    /// <summary>
+    /// shows up to the rest of group which one is currently typing
+    /// </summary>
+    /// <param name="channelId">indicates the current channel</param>
+    public async Task TypingIndicator(int channelId)
+    {
+        var displayName = Context.User?.FindFirst("displayName")?.Value ?? "Unknown";
+        await Clients.OthersInGroup(channelId.ToString())
+            .SendAsync("UserTyping", displayName);
+    }
 }
