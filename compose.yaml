@@ -1,0 +1,38 @@
+﻿services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      - ACCEPT_EULA=Y
+      - MSSQL_SA_PASSWORD=YourStrong@Passw0rd
+    ports:
+      - "1433:1433"
+    volumes:
+      - sqlserver_data:/var/opt/mssql
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+
+  app:
+    build: ./EnexabitWebSocketProject.App
+    depends_on:
+      - redis
+      - sqlserver
+    environment:
+      - ConnectionStrings__Redis=redis:6379
+      - ConnectionStrings__DefaultConnection=Server=sqlserver;Database=EnexabitWebSocketDb;User=sa;Password=YourStrong@Passw0rd;TrustServerCertificate=True;
+      - Jwt__Issuer=EnexabitWebSocketProject
+      - Jwt__Audience=EnexabitWebSocketProject
+      - Jwt__Key=${JWT_KEY}
+      - ASPNETCORE_ENVIRONMENT=Production
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+volumes:
+  redis_data:
+  sqlserver_data:
