@@ -21,7 +21,7 @@ public static class MessageEndpoints
         var messages = await msgService.GetRecentMessagesAsync(channelId);
         return Results.Ok(messages);
     }
-
+    
     private static async Task<IResult> SendMessage(
         int channelId, SendMessageRequest req, HttpContext ctx,
         MessageServices msgService, AppDbContext db)

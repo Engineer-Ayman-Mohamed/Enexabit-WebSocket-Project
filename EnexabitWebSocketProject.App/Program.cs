@@ -10,16 +10,26 @@ using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
+using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"),
+        sqlOptions => sqlOptions.EnableRetryOnFailure(
+            maxRetryCount: 5,
+            maxRetryDelay: TimeSpan.FromSeconds(10),
+            errorNumbersToAdd: null)));
 
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<TokenService>();
 builder.Services.AddScoped<MessageServices>();
-var signalR = builder.Services.AddSignalR();
+
+var signalR = builder.Services.AddSignalR(options =>
+{
+    options.AddFilter<RateLimitFilter>();
+});
+
 var redisConnection = builder.Configuration.GetConnectionString("Redis");
 if (!string.IsNullOrEmpty(redisConnection))
 {
@@ -29,6 +39,7 @@ if (!string.IsNullOrEmpty(redisConnection))
         {
             options.Configuration.ChannelPrefix =
                 StackExchange.Redis.RedisChannel.Literal("Enexabit");
+            options.Configuration.AbortOnConnectFail = false;
         });
     }
     catch (Exception ex)
@@ -36,7 +47,29 @@ if (!string.IsNullOrEmpty(redisConnection))
         Console.WriteLine($"Redis backplane disabled: {ex.Message}. Running in-memory mode.");
     }
 }
-builder.Services.AddSingleton(typeof(IHubFilter), typeof(RateLimitFilter));
+
+builder.Services.AddSingleton<IConnectionMultiplexer>(serviceProvider =>
+{
+    var configurationService = serviceProvider.GetRequiredService<IConfiguration>();
+    var connectionString = configurationService.GetConnectionString("Redis");
+    var redisConfiguration = ConfigurationOptions.Parse(connectionString!);
+
+    redisConfiguration.AbortOnConnectFail = false;
+    redisConfiguration.ConnectRetry = 3;
+    redisConfiguration.ConnectTimeout = 60000;
+
+    return ConnectionMultiplexer.Connect(redisConfiguration);
+});
+
+builder.Services.AddSingleton(serviceProvider =>
+    serviceProvider.GetRequiredService<IConnectionMultiplexer>().GetDatabase());
+
+builder.Services.AddSingleton<RateLimitFilter>(serviceProvider =>
+{
+    var redis = serviceProvider.GetRequiredService<IDatabase>();
+    var logger = serviceProvider.GetRequiredService<ILogger<RateLimitFilter>>();
+    return new RateLimitFilter(redis, logger);
+});
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -109,12 +142,7 @@ builder.Services.AddAuthorization();
 
 var app = builder.Build();
 
-using (var scope = app.Services.CreateScope())
-{
-    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    await db.Database.MigrateAsync();
-    await DbInitializer.SeedAsync(db);
-}
+await MigrateDatabaseWithRetryAsync(app);
 
 app.Use(async (context, next) =>
 {
@@ -146,3 +174,36 @@ ChannelEndpoints.Map(api.MapGroup("/channels"));
 MessageEndpoints.Map(api.MapGroup("/channels"));
 
 app.Run();
+static async Task MigrateDatabaseWithRetryAsync(WebApplication app)
+{
+    const int maxAttempts = 10;
+    var delay = TimeSpan.FromSeconds(6);
+
+    using var scope = app.Services.CreateScope();
+    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+    for (var attempt = 1; attempt <= maxAttempts; attempt++)
+    {
+        try
+        {
+            logger.LogInformation("Applying database migrations (attempt {Attempt}/{MaxAttempts})...", attempt, maxAttempts);
+            await db.Database.MigrateAsync();
+            await DbInitializer.SeedAsync(db);
+            logger.LogInformation("Database migration and seeding completed successfully.");
+            return;
+        }
+        catch (Exception ex) when (attempt < maxAttempts)
+        {
+            logger.LogWarning(ex, "Database not ready yet (attempt {Attempt}/{MaxAttempts}). Retrying in {Delay}s...",
+                attempt, maxAttempts, delay.TotalSeconds);
+            await Task.Delay(delay);
+            delay = TimeSpan.FromSeconds(Math.Min(delay.TotalSeconds * 1.5, 30));
+        }
+        catch (Exception ex)
+        {
+            logger.LogCritical(ex, "Database migration failed after {MaxAttempts} attempts. Application cannot start.", maxAttempts);
+            throw;
+        }
+    }
+}
