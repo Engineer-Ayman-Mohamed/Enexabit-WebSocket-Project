@@ -34,6 +34,7 @@
 
     <ItemGroup>
       <Folder Include="wwwroot\flutter\" />
+      <Folder Include="Features\" />
     </ItemGroup>
 
     <ItemGroup>

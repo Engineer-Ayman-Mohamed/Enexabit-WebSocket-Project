@@ -474,3 +474,9 @@ File: `appsettings.json`
 | `documentation/mobile/EVENTS_REFERENCE.md` | Event payloads, data types, and error handling for Flutter |
 | `documentation/react/REACT_CODE_IMPLEMENTATION.md` | React/TypeScript SignalR client with `@microsoft/signalr` hook |
 | `documentation/react/REACT_EVENTS_REFERENCE.md` | Event payloads and TypeScript types for React |
+
+---
+
+## License
+
+MIT

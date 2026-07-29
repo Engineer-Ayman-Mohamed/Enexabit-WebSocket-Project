@@ -110,8 +110,9 @@ builder.Services.AddCors(options =>
     {
         policy.WithOrigins(
                 "http://localhost:5253",
-                "https://enexabitwebsocket.runasp.net",
+                "http://localhost:3000",
                 "http://localhost:5173",
+                "https://enexabitwebsocket.runasp.net",
                 "https://channel-chat-two.vercel.app"
         )
               .AllowAnyHeader()
@@ -152,10 +153,13 @@ app.Use(async (context, next) =>
     var origin = $"{context.Request.Scheme}://{context.Request.Host}";
     context.Response.Headers.Append("Content-Security-Policy",
         "default-src 'self'; " +
-        "script-src 'self' https://cdnjs.cloudflare.com 'unsafe-inline'; " +
-        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
-        "font-src 'self' https://fonts.gstatic.com; " +
-        $"connect-src 'self' {origin.Replace("http", "ws")} {origin.Replace("http", "wss")} wss://enexabitwebsocket.runasp.net");
+        "script-src 'self' https://cdnjs.cloudflare.com 'unsafe-inline' 'wasm-unsafe-eval'; " +
+        "style-src 'self' 'unsafe-inline'; " +
+        "img-src 'self' data:; " +
+        "font-src 'self'; " +
+        "connect-src 'self' ws://localhost:5253 wss://enexabitwebsocket.runasp.net; " +
+        "worker-src 'self'; " +
+        "frame-src 'self'");
     await next();
 });
 
