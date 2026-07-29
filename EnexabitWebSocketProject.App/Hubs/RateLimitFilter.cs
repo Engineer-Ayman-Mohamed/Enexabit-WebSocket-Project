@@ -56,7 +56,6 @@ public class RateLimitFilter : IHubFilter
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             var windowStart = now - WindowMs;
             var member = $"{now}:{Guid.NewGuid():N}";
-
             try
             {
                 var result = await _redis.ScriptEvaluateAsync(
