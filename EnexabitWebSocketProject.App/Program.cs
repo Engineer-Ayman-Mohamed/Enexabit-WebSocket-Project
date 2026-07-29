@@ -54,18 +54,39 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(serviceProvider =>
 {
     var configurationService = serviceProvider.GetRequiredService<IConfiguration>();
     var connectionString = configurationService.GetConnectionString("Redis");
-    var redisConfiguration = ConfigurationOptions.Parse(connectionString!);
-
-    redisConfiguration.AbortOnConnectFail = false;
-    redisConfiguration.ConnectRetry = 3;
-    redisConfiguration.ConnectTimeout = 60000;
-    redisConfiguration.Ssl = true;
-    redisConfiguration.SslProtocols = SslProtocols.Tls12;
-    return ConnectionMultiplexer.Connect(redisConfiguration);
+    if (!string.IsNullOrEmpty(connectionString))
+    {
+        serviceProvider.GetRequiredKeyedService<ILogger<Program>>(null)
+            .LogWarning("Redis connection faild, running with no redis");
+        return null!;
+    }
+    try
+    {
+        var redisConfiguration = ConfigurationOptions.Parse(connectionString!);
+        redisConfiguration.AbortOnConnectFail = false;
+        redisConfiguration.ConnectRetry = 2;
+        redisConfiguration.ConnectTimeout = 5000;
+        redisConfiguration.Ssl = true;
+        redisConfiguration.SslProtocols = SslProtocols.Tls12;
+        return ConnectionMultiplexer.Connect(redisConfiguration);
+    }
+    catch (Exception ex)
+    {
+        serviceProvider.GetRequiredService<ILogger<Program>>()
+            .LogError(ex, "Failed to connect to Redis. Running without Redis.");
+        return null!;
+    }
 });
 
 builder.Services.AddSingleton(serviceProvider =>
-    serviceProvider.GetRequiredService<IConnectionMultiplexer>().GetDatabase());
+{
+    var connectionMultiplexer = serviceProvider.GetRequiredService<IConnectionMultiplexer>();
+    if (connectionMultiplexer != null!)
+    {
+        return connectionMultiplexer.GetDatabase();
+    }
+    return null!;
+});
 
 builder.Services.AddSingleton<RateLimitFilter>(serviceProvider =>
 {
