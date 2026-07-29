@@ -175,7 +175,12 @@ app.Use(async (context, next) =>
         "style-src 'self' 'unsafe-inline'; " +
         "img-src 'self' data:; " +
         "font-src 'self'; " +
-        "connect-src 'self' ws://localhost:5253 wss://enexabitwebsocket.runasp.net; " +
+        "connect-src 'self' " +
+        $"ws://localhost:5253 wss://localhost:5253 " +
+        $"ws://localhost:5173 wss://localhost:5173 " +
+        $"ws://localhost:3000 wss://localhost:3000 " +
+        $"wss://enexabitwebsocket.runasp.net " +
+        $"wss://channel-chat-two.vercel.app; " +
         "worker-src 'self'; " +
         "frame-src 'self'");
     await next();
@@ -184,7 +189,6 @@ app.Use(async (context, next) =>
 app.UseDefaultFiles();
 app.UseStaticFiles();
 app.UseCors("WebApp");
-app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
 
