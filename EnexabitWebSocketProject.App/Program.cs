@@ -52,22 +52,23 @@ if (!string.IsNullOrEmpty(redisConnection))
 
 builder.Services.AddSingleton<IConnectionMultiplexer>(serviceProvider =>
 {
-    var configurationService = serviceProvider.GetRequiredService<IConfiguration>();
-    var connectionString = configurationService.GetConnectionString("Redis");
-    if (!string.IsNullOrEmpty(connectionString))
+    var connectionString = serviceProvider
+        .GetRequiredService<IConfiguration>()
+        .GetConnectionString("Redis");
+
+    if (string.IsNullOrEmpty(connectionString))
     {
-        serviceProvider.GetRequiredKeyedService<ILogger<Program>>(null)
-            .LogWarning("Redis connection faild, running with no redis");
+        serviceProvider.GetRequiredService<ILogger<Program>>()
+            .LogWarning("Redis connection string not configured. Running without Redis.");
         return null!;
     }
+
     try
     {
-        var redisConfiguration = ConfigurationOptions.Parse(connectionString!);
+        var redisConfiguration = ConfigurationOptions.Parse(connectionString);
         redisConfiguration.AbortOnConnectFail = false;
         redisConfiguration.ConnectRetry = 2;
         redisConfiguration.ConnectTimeout = 5000;
-        redisConfiguration.Ssl = true;
-        redisConfiguration.SslProtocols = SslProtocols.Tls12;
         return ConnectionMultiplexer.Connect(redisConfiguration);
     }
     catch (Exception ex)
@@ -78,14 +79,10 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(serviceProvider =>
     }
 });
 
-builder.Services.AddSingleton(serviceProvider =>
+builder.Services.AddSingleton<IDatabase>(serviceProvider =>
 {
-    var connectionMultiplexer = serviceProvider.GetRequiredService<IConnectionMultiplexer>();
-    if (connectionMultiplexer != null!)
-    {
-        return connectionMultiplexer.GetDatabase();
-    }
-    return null!;
+    var multiplexer = serviceProvider.GetRequiredService<IConnectionMultiplexer>();
+    return multiplexer?.GetDatabase()!;
 });
 
 builder.Services.AddSingleton<RateLimitFilter>(serviceProvider =>
