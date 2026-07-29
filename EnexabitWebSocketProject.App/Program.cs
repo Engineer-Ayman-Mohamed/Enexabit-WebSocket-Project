@@ -1,3 +1,4 @@
+using System.Security.Authentication;
 using System.Text;
 using EnexabitWebSocketProject.App.Data;
 using EnexabitWebSocketProject.App.Features.Auth;
@@ -37,9 +38,10 @@ if (!string.IsNullOrEmpty(redisConnection))
     {
         signalR.AddStackExchangeRedis(redisConnection, options =>
         {
-            options.Configuration.ChannelPrefix =
-                StackExchange.Redis.RedisChannel.Literal("Enexabit");
+            options.Configuration.ChannelPrefix = StackExchange.Redis.RedisChannel.Literal("Enexabit");
             options.Configuration.AbortOnConnectFail = false;
+            options.Configuration.Ssl = true;
+            options.Configuration.SslProtocols = SslProtocols.Tls12;
         });
     }
     catch (Exception ex)
@@ -57,7 +59,8 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(serviceProvider =>
     redisConfiguration.AbortOnConnectFail = false;
     redisConfiguration.ConnectRetry = 3;
     redisConfiguration.ConnectTimeout = 60000;
-
+    redisConfiguration.Ssl = true;
+    redisConfiguration.SslProtocols = SslProtocols.Tls12;
     return ConnectionMultiplexer.Connect(redisConfiguration);
 });
 
