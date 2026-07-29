@@ -56,34 +56,41 @@ public class RateLimitFilter : IHubFilter
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             var windowStart = now - WindowMs;
             var member = $"{now}:{Guid.NewGuid():N}";
-            try
+            if (_redis is null || !_redis.Multiplexer.IsConnected)
             {
-                var result = await _redis.ScriptEvaluateAsync(
-                    RateLimitScript,
-                    new RedisKey[] { key },
-                    new RedisValue[] { now,
-                        windowStart,
-                        MaxRequestsPerMinute,
-                        KeyTtlSeconds,
-                        member
-                    }
-                );
-
-                var allowed = result.IsNull ? 0 : (int)result;
-
-                _logger.LogInformation("Rate limit check for {ConnectionId}: allowed={Allowed}, key={Key}", connectionId, allowed, key);
-
-                if (allowed == 0)
-                {
-                    var hubContext = invocationContext.ServiceProvider.GetRequiredService<IHubContext<ChannelHub>>();
-                    await hubContext.Clients.Client(connectionId)
-                        .SendAsync("Error", "Rate limit exceeded. Max 30 messages per minute.");
-                    return null;
-                }
+                _logger.LogWarning("Redis unavailable. Rate limiting bypassed for {ConnectionId}", connectionId);
             }
-            catch (Exception ex)
+            else
             {
-                _logger.LogError(ex, "Rate limit Redis error for {ConnectionId}. Failing open.", connectionId);
+                try
+                {
+                    var result = await _redis.ScriptEvaluateAsync(
+                        RateLimitScript,
+                        new RedisKey[] { key },
+                        new RedisValue[] { now,
+                            windowStart,
+                            MaxRequestsPerMinute,
+                            KeyTtlSeconds,
+                            member
+                        }
+                    );
+
+                    var allowed = result.IsNull ? 0 : (int)result;
+
+                    _logger.LogInformation("Rate limit check for {ConnectionId}: allowed={Allowed}, key={Key}", connectionId, allowed, key);
+
+                    if (allowed == 0)
+                    {
+                        var hubContext = invocationContext.ServiceProvider.GetRequiredService<IHubContext<ChannelHub>>();
+                        await hubContext.Clients.Client(connectionId)
+                            .SendAsync("Error", "Rate limit exceeded. Max 30 messages per minute.");
+                        return null;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Rate limit Redis error for {ConnectionId}. Failing open.", connectionId);
+                }
             }
         }
         return await next(invocationContext);
