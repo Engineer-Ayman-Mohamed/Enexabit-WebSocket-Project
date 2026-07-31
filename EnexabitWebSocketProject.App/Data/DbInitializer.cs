@@ -12,6 +12,20 @@ public static class DbInitializer
     /// <param name="db">The database context.</param>
     public static async Task SeedAsync(AppDbContext db)
     {
+        if (!db.Users.Any(u => u.Role == "admin"))
+        {
+            db.Users.Add(
+            new User {
+                Username = "admin",
+                DisplayName = "Admin",
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword("admin123"),
+                Role = "admin",
+                CreatedAt = DateTime.UtcNow
+            }
+        );
+            await db.SaveChangesAsync();
+        }
+
         if (db.Users.Any()) return;
 
         db.Users.AddRange(

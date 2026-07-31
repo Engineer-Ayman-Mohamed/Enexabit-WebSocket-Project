@@ -3,6 +3,7 @@ using EnexabitWebSocketProject.App.Data;
 using EnexabitWebSocketProject.App.Features.Auth;
 using EnexabitWebSocketProject.App.Features.Channels;
 using EnexabitWebSocketProject.App.Features.Messages;
+using EnexabitWebSocketProject.App.Features.Admin;
 using EnexabitWebSocketProject.App.Hubs;
 using EnexabitWebSocketProject.App.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -130,9 +131,9 @@ builder.Services.AddCors(options =>
                 "https://enexabitwebsocket.runasp.net",
                 "https://channel-chat-two.vercel.app"
         )
-              .AllowAnyHeader()
-              .AllowAnyMethod()
-              .AllowCredentials();
+        .AllowAnyHeader()
+        .AllowAnyMethod()
+        .AllowCredentials();
     });
 });
 
@@ -209,6 +210,8 @@ AuthEndpoints.Map(app.MapGroup("/api/auth"));
 var api = app.MapGroup("/api").RequireAuthorization();
 ChannelEndpoints.Map(api.MapGroup("/channels"));
 MessageEndpoints.Map(api.MapGroup("/channels"));
+
+AdminEndpoints.Map(app.MapGroup("/api/admin").RequireAuthorization("AdminOnly"));
 
 app.Run();
 static async Task MigrateDatabaseWithRetryAsync(WebApplication app)

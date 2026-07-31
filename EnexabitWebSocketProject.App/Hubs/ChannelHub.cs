@@ -15,7 +15,7 @@ namespace EnexabitWebSocketProject.App.Hubs;
 /// Connections are tracked in a <see cref="ConcurrentDictionary{TKey,TValue}"/>
 /// to enable reverse lookup (connection → channels) on disconnect.
 /// </summary>
-[Authorize]
+[Authorize(Roles = "user,admin")]
 public class ChannelHub : Hub
 {
     private record UserConnection(string DisplayName, HashSet<int> Channels, string ClientType);
