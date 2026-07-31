@@ -20,6 +20,9 @@ public class User
 
     /// <summary>UTC timestamp when the account was created.</summary>
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    
+    /// <summary>User role for authorization</summary>
+    public string Role { get; set; } = "user";
 
     /// <summary>Refresh tokens associated with this user.</summary>
     public List<RefreshToken> RefreshTokens { get; set; } = [];
