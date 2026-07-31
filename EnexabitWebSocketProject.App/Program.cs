@@ -157,7 +157,18 @@ builder.Services.AddSwaggerGen(options =>
     });
 });
 
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("Administrator", policy =>
+    {
+        policy.RequireRole("admin");
+    });
+    
+    options.AddPolicy("UserOrAdmin", policy =>
+    {
+        policy.RequireRole("user", "admin");
+    });
+});
 
 var app = builder.Build();
 
