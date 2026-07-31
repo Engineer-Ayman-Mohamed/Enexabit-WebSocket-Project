@@ -48,6 +48,7 @@ public static class AuthEndpoints
         {
             AccessToken = accessToken,
             DisplayName = user.DisplayName,
+            Role =  user.Role,
             RefreshToken = clientType.Equals("mobile", StringComparison.OrdinalIgnoreCase) ? refreshToken : null
         });
     }
