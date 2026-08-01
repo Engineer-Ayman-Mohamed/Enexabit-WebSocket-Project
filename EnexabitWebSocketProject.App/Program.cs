@@ -160,7 +160,7 @@ builder.Services.AddSwaggerGen(options =>
 
 builder.Services.AddAuthorization(options =>
 {
-    options.AddPolicy("Administrator", policy =>
+    options.AddPolicy("AdminOnly", policy =>
     {
         policy.RequireRole("admin");
     });
