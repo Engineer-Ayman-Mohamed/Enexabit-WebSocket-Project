@@ -63,20 +63,27 @@ public class TokenService
     /// <summary>Generates a cryptographically random refresh token (64 bytes) and persists it.</summary>
     /// <param name="userId">The user this token belongs to.</param>
     /// <returns>The raw token string to be stored client-side.</returns>
-    public async Task<string> GenerateRefreshTokenAsync(int userId)
+    public async Task<string?> GenerateRefreshTokenAsync(int userId)
     {
-        var tokenBytes = RandomNumberGenerator.GetBytes(64);
-        var tokenString = Convert.ToBase64String(tokenBytes);
-
-        _db.RefreshTokens.Add(new RefreshToken
+        try
         {
-            UserId = userId,
-            Token = tokenString,
-            ExpiresAt = DateTime.UtcNow.AddDays(7)
-        });
+            var tokenBytes = RandomNumberGenerator.GetBytes(64);
+            var tokenString = Convert.ToBase64String(tokenBytes);
 
-        await _db.SaveChangesAsync();
-        return tokenString;
+            _db.RefreshTokens.Add(new RefreshToken
+            {
+                UserId = userId,
+                Token = tokenString,
+                ExpiresAt = DateTime.UtcNow.AddDays(7)
+            });
+
+            await _db.SaveChangesAsync();
+            return tokenString;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 
     /// <summary>
@@ -90,39 +97,53 @@ public class TokenService
     /// </returns>
     public async Task<(string accessToken, string refreshToken)?> RotateRefreshTokenAsync(string oldRefreshToken)
     {
-        var stored = await _db.RefreshTokens
-            .Include(rt => rt.User)
-            .FirstOrDefaultAsync(rt => rt.Token == oldRefreshToken);
-
-        if (stored is null) return null;
-        if (stored.ExpiresAt < DateTime.UtcNow) return null;
-        if (stored.RevokedAt is not null)
+        try
         {
-            await RevokeAllUserTokensAsync(stored.UserId);
+            var stored = await _db.RefreshTokens
+                .Include(rt => rt.User)
+                .FirstOrDefaultAsync(rt => rt.Token == oldRefreshToken);
+
+            if (stored is null) return null;
+            if (stored.ExpiresAt < DateTime.UtcNow) return null;
+            if (stored.RevokedAt is not null)
+            {
+                await RevokeAllUserTokensAsync(stored.UserId);
+                return null;
+            }
+
+            stored.RevokedAt = DateTime.UtcNow;
+
+            var newRefreshToken = await GenerateRefreshTokenAsync(stored.UserId);
+            stored.ReplacedByToken = newRefreshToken;
+
+            await _db.SaveChangesAsync();
+
+            return (GenerateAccessToken(stored.User), newRefreshToken!);
+        }
+        catch (Exception)
+        {
             return null;
         }
-
-        stored.RevokedAt = DateTime.UtcNow;
-
-        var newRefreshToken = await GenerateRefreshTokenAsync(stored.UserId);
-        stored.ReplacedByToken = newRefreshToken;
-
-        await _db.SaveChangesAsync();
-
-        return (GenerateAccessToken(stored.User), newRefreshToken);
     }
 
     /// <summary>Revokes every active refresh token belonging to the specified user.</summary>
     /// <param name="userId">The user whose tokens should be revoked.</param>
     public async Task RevokeAllUserTokensAsync(int userId)
     {
-        var active = await _db.RefreshTokens
-            .Where(rt => rt.UserId == userId && rt.RevokedAt == null)
-            .ToListAsync();
+        try
+        {
+            var active = await _db.RefreshTokens
+                .Where(rt => rt.UserId == userId && rt.RevokedAt == null)
+                .ToListAsync();
 
-        foreach (var rt in active)
-            rt.RevokedAt = DateTime.UtcNow;
+            foreach (var rt in active)
+                rt.RevokedAt = DateTime.UtcNow;
 
-        await _db.SaveChangesAsync();
+            await _db.SaveChangesAsync();
+        }
+        catch (Exception)
+        {
+            // Token revocation failed — non-critical, continue
+        }
     }
 }

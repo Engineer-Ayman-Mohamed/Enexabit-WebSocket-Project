@@ -57,27 +57,34 @@ public class ChannelHub : Hub
     /// </remarks>
     public async Task JoinChannel(int channelId)
     {
-        if (!await _messageService.ChannelExistsAsync(channelId))
+        try
         {
-            await Clients.Caller.SendAsync("Error", "Channel not found");
-            return;
+            if (!await _messageService.ChannelExistsAsync(channelId))
+            {
+                await Clients.Caller.SendAsync("Error", "Channel not found");
+                return;
+            }
+
+            var connectionId = Context.ConnectionId;
+            var displayName = Context.User?.FindFirst("displayName")?.Value ?? "Unknown";
+            var clientType = _clientTypes.GetValueOrDefault(connectionId, "web");
+
+            _connections.AddOrUpdate(connectionId,
+                _ => new UserConnection(displayName, [channelId], clientType),
+                (_, uc) => { uc.Channels.Add(channelId); return uc; });
+            
+            await Groups.AddToGroupAsync(connectionId, channelId.ToString());
+            
+            var recentMessages = await _messageService.GetRecentMessagesAsync(channelId);
+            
+            await Clients.Caller.SendAsync("JoinedChannel", recentMessages);
+            
+            await Clients.OthersInGroup(channelId.ToString()) .SendAsync("UserJoined", displayName);
         }
-
-        var connectionId = Context.ConnectionId;
-        var displayName = Context.User?.FindFirst("displayName")?.Value ?? "Unknown";
-        var clientType = _clientTypes.GetValueOrDefault(connectionId, "web");
-
-        _connections.AddOrUpdate(connectionId,
-            _ => new UserConnection(displayName, [channelId], clientType),
-            (_, uc) => { uc.Channels.Add(channelId); return uc; });
-        
-        await Groups.AddToGroupAsync(connectionId, channelId.ToString());
-        
-        var recentMessages = await _messageService.GetRecentMessagesAsync(channelId);
-        
-        await Clients.Caller.SendAsync("JoinedChannel", recentMessages);
-        
-        await Clients.OthersInGroup(channelId.ToString()) .SendAsync("UserJoined", displayName);
+        catch (Exception)
+        {
+            await Clients.Caller.SendAsync("Error", "Failed to join channel. Please try again.");
+        }
     }
 
     /// <summary>
@@ -93,40 +100,47 @@ public class ChannelHub : Hub
     /// </remarks>
     public async Task SendMessage(int channelId, string text)
     {
-        if (channelId <= 0)
+        try
         {
-            await Clients.Caller.SendAsync("Error", "Invalid channel ID");
-            return;
+            if (channelId <= 0)
+            {
+                await Clients.Caller.SendAsync("Error", "Invalid channel ID");
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                await Clients.Caller.SendAsync("Error", "Message text cannot be empty");
+                return;
+            }
+
+            if (text.Length > 4000)
+            {
+                await Clients.Caller.SendAsync("Error", "Message exceeds 4000 character limit");
+                return;
+            }
+
+            var displayName = Context.User?.FindFirst("displayName")?.Value ?? "Unknown";
+            var message = await _messageService.SaveMessageAsync(channelId, displayName, text);
+
+            if (message is null)
+            {
+                await Clients.Caller.SendAsync("Error", "Channel not found");
+                return;
+            }
+
+            await Clients.Group(channelId.ToString()).SendAsync("NewMessage", new
+            {
+                message.Id,
+                message.UserName,
+                message.Text,
+                message.CreatedAt
+            });
         }
-
-        if (string.IsNullOrWhiteSpace(text))
+        catch (Exception)
         {
-            await Clients.Caller.SendAsync("Error", "Message text cannot be empty");
-            return;
+            await Clients.Caller.SendAsync("Error", "Failed to send message. Please try again.");
         }
-
-        if (text.Length > 4000)
-        {
-            await Clients.Caller.SendAsync("Error", "Message exceeds 4000 character limit");
-            return;
-        }
-
-        var displayName = Context.User?.FindFirst("displayName")?.Value ?? "Unknown";
-        var message = await _messageService.SaveMessageAsync(channelId, displayName, text);
-
-        if (message is null)
-        {
-            await Clients.Caller.SendAsync("Error", "Channel not found");
-            return;
-        }
-
-        await Clients.Group(channelId.ToString()).SendAsync("NewMessage", new
-        {
-            message.Id,
-            message.UserName,
-            message.Text,
-            message.CreatedAt
-        });
     }
 
     /// <summary>
@@ -135,17 +149,24 @@ public class ChannelHub : Hub
     /// </summary>
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
-        var connectionId = Context.ConnectionId;
-
-        _clientTypes.TryRemove(connectionId, out _);
-
-        if (_connections.TryRemove(connectionId, out var userConnection))
+        try
         {
-            foreach (var channelId in userConnection.Channels)
+            var connectionId = Context.ConnectionId;
+
+            _clientTypes.TryRemove(connectionId, out _);
+
+            if (_connections.TryRemove(connectionId, out var userConnection))
             {
-                await Groups.RemoveFromGroupAsync(connectionId, channelId.ToString());
-                await Clients.Group(channelId.ToString()).SendAsync("UserLeft", userConnection.DisplayName);
+                foreach (var channelId in userConnection.Channels)
+                {
+                    await Groups.RemoveFromGroupAsync(connectionId, channelId.ToString());
+                    await Clients.Group(channelId.ToString()).SendAsync("UserLeft", userConnection.DisplayName);
+                }
             }
+        }
+        catch (Exception)
+        {
+            // Disconnect cleanup failed — non-critical
         }
 
         await base.OnDisconnectedAsync(exception);
@@ -156,8 +177,15 @@ public class ChannelHub : Hub
          /// <param name="channelId">indicates the current channel</param>
          public async Task TypingIndicator(int channelId)
          {
-             var displayName = Context.User?.FindFirst("displayName")?.Value ?? "Unknown";
-             await Clients.OthersInGroup(channelId.ToString())
-                 .SendAsync("UserTyping", displayName);
+             try
+             {
+                 var displayName = Context.User?.FindFirst("displayName")?.Value ?? "Unknown";
+                 await Clients.OthersInGroup(channelId.ToString())
+                     .SendAsync("UserTyping", displayName);
+             }
+             catch (Exception)
+             {
+                 // Typing indicator failed — non-critical
+             }
          }
 }

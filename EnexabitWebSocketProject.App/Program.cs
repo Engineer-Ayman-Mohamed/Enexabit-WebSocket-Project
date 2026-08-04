@@ -275,8 +275,9 @@ static async Task MigrateDatabaseWithRetryAsync(WebApplication app)
         }
         catch (Exception ex)
         {
-            logger.LogCritical(ex, "Database migration failed after {MaxAttempts} attempts. Application cannot start.", maxAttempts);
-            throw;
+            logger.LogCritical(ex, "Database migration failed after {MaxAttempts} attempts. " +
+                "Application will start but database operations will fail.", maxAttempts);
+            return;
         }
     }
 }
