@@ -17,6 +17,12 @@ public class AppDbContext : DbContext
 
     /// <summary>Chat messages posted to channels.</summary>
     public DbSet<Message> Messages => Set<Message>();
+    
+    /// <summary>Notifications sent to users.</summary>
+    public DbSet<Notification> Notifications => Set<Notification>();
+
+    /// <summary>User notification preferences by type.</summary>
+    public DbSet<NotificationPreference> NotificationPreferences => Set<NotificationPreference>();
 
     /// <param name="options">DbContext options configured in <c>Program.cs</c> for SQL Server.</param>
     public AppDbContext(DbContextOptions<AppDbContext> options)
