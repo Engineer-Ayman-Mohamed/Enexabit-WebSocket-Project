@@ -2,6 +2,11 @@
 
 namespace EnexabitWebSocketProject.App.Models;
 
+/// <summary>
+/// Represents a notification sent to a user.
+/// Supports both user-specific and system-wide notifications.
+/// </summary>
+
 public class Notification
 {
     /// <summary>Unique identifier for the notification.</summary>
