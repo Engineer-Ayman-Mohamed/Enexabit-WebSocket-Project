@@ -14,6 +14,8 @@ public static class MessageEndpoints
     {
         group.MapGet("/{channelId:int}/messages", GetMessages).RequireAuthorization();
         group.MapPost("/{channelId:int}/messages", SendMessage).RequireAuthorization();
+        group.MapDelete("/{channelId:int}/messages/{messageId:int}", DeleteMessage)
+            .RequireAuthorization("AdminOnly");
     }
 
     private static async Task<IResult> GetMessages(int channelId, MessageServices msgService)
@@ -44,5 +46,20 @@ public static class MessageEndpoints
             message.Text,
             message.CreatedAt
         });
+    }
+
+    private static async Task<IResult> DeleteMessage(
+        int channelId, int messageId, AppDbContext db)
+    {
+        var message = await db.Messages
+            .FirstOrDefaultAsync(m => m.Id == messageId && m.ChannelId == channelId);
+
+        if (message is null)
+            return Results.NotFound(new { error = "Message not found" });
+
+        db.Messages.Remove(message);
+        await db.SaveChangesAsync();
+
+        return Results.Ok(new { message = "Message deleted" });
     }
 }

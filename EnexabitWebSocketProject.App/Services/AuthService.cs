@@ -22,10 +22,17 @@ public class AuthService
     /// <returns>The authenticated user, or <c>null</c> if credentials are invalid.</returns>
     public async Task<User?> AuthenticateAsync(string username, string password)
     {
-        var user = await _db.Users.FirstOrDefaultAsync(u => u.Username == username);
-        if (user is null || !BCrypt.Net.BCrypt.Verify(password, user.PasswordHash))
+        try
+        {
+            var user = await _db.Users.FirstOrDefaultAsync(u => u.Username == username);
+            if (user is null || !BCrypt.Net.BCrypt.Verify(password, user.PasswordHash))
+                return null;
+            return user;
+        }
+        catch (Exception)
+        {
             return null;
-        return user;
+        }
     }
 
     /// <summary>Creates a new user account with a BCrypt-hashed password.</summary>
@@ -35,18 +42,25 @@ public class AuthService
     /// <returns>A tuple: the created user and null on success; null and an error message on failure.</returns>
     public async Task<(User? user, string? error)> RegisterAsync(string username, string password, string displayName)
     {
-        if (await _db.Users.AnyAsync(u => u.Username == username))
-            return (null, "Username is already taken");
-
-        var user = new User
+        try
         {
-            Username = username,
-            DisplayName = string.IsNullOrWhiteSpace(displayName) ? username : displayName,
-            PasswordHash = BCrypt.Net.BCrypt.HashPassword(password)
-        };
+            if (await _db.Users.AnyAsync(u => u.Username == username))
+                return (null, "Username is already taken");
 
-        _db.Users.Add(user);
-        await _db.SaveChangesAsync();
-        return (user, null);
+            var user = new User
+            {
+                Username = username,
+                DisplayName = string.IsNullOrWhiteSpace(displayName) ? username : displayName,
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword(password)
+            };
+
+            _db.Users.Add(user);
+            await _db.SaveChangesAsync();
+            return (user, null);
+        }
+        catch (Exception)
+        {
+            return (null, "Registration failed due to a server error. Please try again.");
+        }
     }
 }

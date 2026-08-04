@@ -14,6 +14,9 @@ public class LoginResponse
     /// <summary>The user's display name for UI rendering.</summary>
     public string DisplayName { get; set; } = string.Empty;
 
+    /// <summary>The user's role ("admin" or "user") for client-side UI decisions.</summary>
+    public string Role { get; set; } = string.Empty;
+    
     /// <summary>
     /// Refresh token for silent token rotation.
     /// <c>null</c> for web clients (cookie-only); populated for mobile clients.
