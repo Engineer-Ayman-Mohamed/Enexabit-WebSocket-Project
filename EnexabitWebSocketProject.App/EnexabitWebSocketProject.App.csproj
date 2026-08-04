@@ -33,6 +33,7 @@
     </ItemGroup>
 
     <ItemGroup>
+      <Folder Include="Config\" />
       <Folder Include="wwwroot\flutter\" />
       <Folder Include="Features\" />
     </ItemGroup>

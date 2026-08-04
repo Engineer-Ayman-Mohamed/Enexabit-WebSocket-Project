@@ -16,6 +16,7 @@ public static class AuthEndpoints
         group.MapPost("/login", Login);
         group.MapPost("/refresh", Refresh);
         group.MapPost("/logout", Logout).RequireAuthorization();
+        group.MapGet("/me", Me).RequireAuthorization();
     }
 
     private static async Task<IResult> Register(RegisterRequest req, AuthService auth)
@@ -48,6 +49,7 @@ public static class AuthEndpoints
         {
             AccessToken = accessToken,
             DisplayName = user.DisplayName,
+            Role =  user.Role,
             RefreshToken = clientType.Equals("mobile", StringComparison.OrdinalIgnoreCase) ? refreshToken : null
         });
     }
@@ -118,5 +120,18 @@ public static class AuthEndpoints
         }
 
         return Results.Ok(new { message = "Logged out" });
+    }
+
+    private static IResult Me(HttpContext ctx)
+    {
+        var claims = ctx.User.Claims.Select(c => new { c.Type, c.Value });
+        return Results.Ok(new
+        {
+            isAuthenticated = ctx.User.Identity?.IsAuthenticated,
+            authenticationType = ctx.User.Identity?.AuthenticationType,
+            nameClaim = ctx.User.FindFirst(ClaimTypes.Name)?.Value,
+            roleClaim = ctx.User.FindFirst(ClaimTypes.Role)?.Value,
+            allClaims = claims
+        });
     }
 }
