@@ -3,12 +3,15 @@ using EnexabitWebSocketProject.App.Data;
 using EnexabitWebSocketProject.App.Features.Auth;
 using EnexabitWebSocketProject.App.Features.Channels;
 using EnexabitWebSocketProject.App.Features.Messages;
+using EnexabitWebSocketProject.App.Health;
 using EnexabitWebSocketProject.App.Features.Admin;
 using EnexabitWebSocketProject.App.Hubs;
 using EnexabitWebSocketProject.App.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 using StackExchange.Redis;
@@ -188,6 +191,25 @@ builder.Services.AddAuthorization(options =>
     });
 });
 
+var sqlConnectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+var redisConnectionString = builder.Configuration.GetConnectionString("Redis");
+
+builder.Services.AddHealthChecks()
+    .AddSqlServer(
+        sqlConnectionString!,
+        name: "sqlserver",
+        failureStatus: HealthStatus.Unhealthy,
+        tags: ["db", "sql"])
+    .AddRedis(
+        redisConnectionString ?? "localhost:6379",
+        name: "redis",
+        failureStatus: HealthStatus.Unhealthy,
+        tags: ["cache", "redis"])
+    .AddCheck<SignalRHealthCheck>(
+        "signalr",
+        failureStatus: HealthStatus.Unhealthy,
+        tags: ["realtime"]);
+
 var app = builder.Build();
 
 await MigrateDatabaseWithRetryAsync(app);
@@ -244,6 +266,30 @@ var api = app.MapGroup("/api").RequireAuthorization();
 ChannelEndpoints.Map(api.MapGroup("/channels"));
 MessageEndpoints.Map(api.MapGroup("/channels"));
 
+app.MapHealthChecks("/health", new HealthCheckOptions
+{
+    ResponseWriter = HealthCheckJsonResponseWriter.WriteResponse
+}).RequireAuthorization();
+
+app.MapGet("/api/health", async (HealthCheckService healthCheck) =>
+{
+    var report = await healthCheck.CheckHealthAsync();
+    return Results.Ok(new
+    {
+        status = report.Status.ToString(),
+        checks = report.Entries.Select(e => new
+        {
+            name = e.Key,
+            status = e.Value.Status.ToString(),
+            duration = e.Value.Duration.TotalMilliseconds
+        })
+    });
+})
+.WithName("HealthCheck")
+.WithTags("Health")
+.Produces<object>()
+.ProducesProblem(503)
+.RequireAuthorization();
 AdminEndpoints.Map(app.MapGroup("/api/admin").RequireAuthorization("AdminOnly"));
 
 app.Run();
