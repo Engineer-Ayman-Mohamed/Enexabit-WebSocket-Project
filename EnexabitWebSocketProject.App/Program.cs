@@ -4,6 +4,7 @@ using EnexabitWebSocketProject.App.Features.Auth;
 using EnexabitWebSocketProject.App.Features.Channels;
 using EnexabitWebSocketProject.App.Features.Messages;
 using EnexabitWebSocketProject.App.Health;
+using EnexabitWebSocketProject.App.Features.Admin;
 using EnexabitWebSocketProject.App.Hubs;
 using EnexabitWebSocketProject.App.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -118,6 +119,23 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                     context.Token = accessToken;
                 }
                 return Task.CompletedTask;
+            },
+            OnAuthenticationFailed = context =>
+            {
+                var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<Program>>();
+                var authHeader = context.HttpContext.Request.Headers["Authorization"].FirstOrDefault();
+                logger.LogError("JWT FAILED: {Error} | Auth header present: {HasHeader} | Header value (first 80 chars): {Header}",
+                    context.Exception.Message,
+                    !string.IsNullOrEmpty(authHeader),
+                    authHeader?.Substring(0, Math.Min(80, authHeader?.Length ?? 0)) ?? "(empty)");
+                return Task.CompletedTask;
+            },
+            OnTokenValidated = context =>
+            {
+                var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<Program>>();
+                var roles = context.Principal?.Claims.Where(c => c.Type == System.Security.Claims.ClaimTypes.Role).Select(c => c.Value);
+                logger.LogInformation("JWT VALIDATED OK. Roles: {Roles}", string.Join(",", roles ?? []));
+                return Task.CompletedTask;
             }
         };
     });
@@ -133,9 +151,9 @@ builder.Services.AddCors(options =>
                 "https://enexabitwebsocket.runasp.net",
                 "https://channel-chat-two.vercel.app"
         )
-              .AllowAnyHeader()
-              .AllowAnyMethod()
-              .AllowCredentials();
+        .AllowAnyHeader()
+        .AllowAnyMethod()
+        .AllowCredentials();
     });
 });
 
@@ -151,16 +169,27 @@ builder.Services.AddSwaggerGen(options =>
         Scheme = "bearer",
         BearerFormat = "JWT",
         In = ParameterLocation.Header,
-        Description = "Enter your JWT token"
+        Description = "JWT token. Enter only the token (no Bearer prefix needed)"
     });
 
-    options.AddSecurityRequirement(_ => new OpenApiSecurityRequirement
+    options.AddSecurityRequirement(doc => new OpenApiSecurityRequirement
     {
-        { new OpenApiSecuritySchemeReference("Bearer", null, null), [] }
+        [new OpenApiSecuritySchemeReference("Bearer", doc)] = []
     });
 });
 
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("AdminOnly", policy =>
+    {
+        policy.RequireRole("admin");
+    });
+    
+    options.AddPolicy("UserOrAdmin", policy =>
+    {
+        policy.RequireRole("user", "admin");
+    });
+});
 
 var sqlConnectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 var redisConnectionString = builder.Configuration.GetConnectionString("Redis");
@@ -208,6 +237,22 @@ app.Use(async (context, next) =>
 app.UseDefaultFiles();
 app.UseStaticFiles();
 app.UseCors("WebApp");
+
+app.Use(async (context, next) =>
+{
+    if (context.Request.Path.StartsWithSegments("/api/admin"))
+    {
+        var logger = context.RequestServices.GetRequiredService<ILogger<Program>>();
+        var authHeader = context.Request.Headers["Authorization"].FirstOrDefault();
+        var scheme = context.Request.Scheme;
+        var host = context.Request.Host.Value;
+        logger.LogWarning("[DIAG] {Method} {Path} | Scheme: {Scheme} | Host: {Host} | Auth header present: {HasHeader} | Auth header (first 80): {Header}",
+            context.Request.Method, context.Request.Path, scheme, host,
+            !string.IsNullOrEmpty(authHeader),
+            authHeader?.Substring(0, Math.Min(80, authHeader?.Length ?? 0)) ?? "(empty)");
+    }
+    await next();
+});
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -245,6 +290,7 @@ app.MapGet("/api/health", async (HealthCheckService healthCheck) =>
 .Produces<object>()
 .ProducesProblem(503)
 .RequireAuthorization();
+AdminEndpoints.Map(app.MapGroup("/api/admin").RequireAuthorization("AdminOnly"));
 
 app.Run();
 static async Task MigrateDatabaseWithRetryAsync(WebApplication app)
@@ -275,8 +321,9 @@ static async Task MigrateDatabaseWithRetryAsync(WebApplication app)
         }
         catch (Exception ex)
         {
-            logger.LogCritical(ex, "Database migration failed after {MaxAttempts} attempts. Application cannot start.", maxAttempts);
-            throw;
+            logger.LogCritical(ex, "Database migration failed after {MaxAttempts} attempts. " +
+                "Application will start but database operations will fail.", maxAttempts);
+            return;
         }
     }
 }
