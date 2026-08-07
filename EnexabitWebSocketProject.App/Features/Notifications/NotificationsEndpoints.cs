@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace EnexabitWebSocketProject.App.Features.Notifications;
 
-public class NotificationsEndpoints
+public static class NotificationsEndpoints
 {
     public static void Map(RouteGroupBuilder group)
     {
