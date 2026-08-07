@@ -28,7 +28,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<TokenService>();
 builder.Services.AddScoped<MessageServices>();
-builder.Services.AddScoped<MessageServices>();
+builder.Services.AddScoped<NotificationService>();
 
 var signalR = builder.Services.AddSignalR(options =>
 {
@@ -260,6 +260,7 @@ app.UseAuthorization();
 app.UseSwagger();
 app.UseSwaggerUI();
 app.MapHub<ChannelHub>("/channelHub");
+app.MapHub<NotificationHub>("notificationHub");
 
 AuthEndpoints.Map(app.MapGroup("/api/auth"));
 
