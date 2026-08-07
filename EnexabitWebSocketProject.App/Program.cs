@@ -5,6 +5,7 @@ using EnexabitWebSocketProject.App.Features.Channels;
 using EnexabitWebSocketProject.App.Features.Messages;
 using EnexabitWebSocketProject.App.Health;
 using EnexabitWebSocketProject.App.Features.Admin;
+using EnexabitWebSocketProject.App.Features.Notifications;
 using EnexabitWebSocketProject.App.Hubs;
 using EnexabitWebSocketProject.App.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -267,6 +268,7 @@ AuthEndpoints.Map(app.MapGroup("/api/auth"));
 var api = app.MapGroup("/api").RequireAuthorization();
 ChannelEndpoints.Map(api.MapGroup("/channels"));
 MessageEndpoints.Map(api.MapGroup("/channels"));
+NotificationsEndpoints.Map(api.MapGroup("/notifications"));
 
 app.MapHealthChecks("/health", new HealthCheckOptions
 {
@@ -293,6 +295,8 @@ app.MapGet("/api/health", async (HealthCheckService healthCheck) =>
 .ProducesProblem(503)
 .RequireAuthorization();
 AdminEndpoints.Map(app.MapGroup("/api/admin").RequireAuthorization("AdminOnly"));
+
+AdminNotificationsEndpoints.Map(app.MapGroup("/api/admin").RequireAuthorization("AdminOnly"));
 
 app.Run();
 static async Task MigrateDatabaseWithRetryAsync(WebApplication app)
