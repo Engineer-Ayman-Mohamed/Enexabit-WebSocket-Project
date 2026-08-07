@@ -13,7 +13,7 @@ public class Notification
     public int Id { get; set; }
 
     /// <summary>Foreign key to the target user. 0 for system-wide notifications.</summary>
-    public int UserId { get; set; }
+    public int? UserId { get; set; }
 
     /// <summary>The type of notification (mention, channel update, etc.).</summary>
     public NotificationTypes Type { get; set; }

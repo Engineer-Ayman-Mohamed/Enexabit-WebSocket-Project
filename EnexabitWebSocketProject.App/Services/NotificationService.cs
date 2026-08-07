@@ -156,7 +156,7 @@ public class NotificationService
 
             var notification = new Notification
             {
-                UserId = 0,
+                UserId = null,
                 Type = NotificationTypes.SystemMaintenance,
                 Title = title,
                 Data = data,
@@ -192,7 +192,7 @@ public class NotificationService
 
             var notification = new Notification
             {
-                UserId = 0,
+                UserId = null,
                 Type = NotificationTypes.SystemAnnouncement,
                 Title = message.Length > 200 ? message[..200] + "..." : message,
                 Data = data,
