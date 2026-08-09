@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using EnexabitWebSocketProject.App.Data;
 using EnexabitWebSocketProject.App.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
@@ -24,11 +25,20 @@ public class ChannelHub : Hub
     private static readonly ConcurrentDictionary<string, string> _clientTypes = new();
 
     private readonly MessageServices _messageService;
+    private readonly NotificationService _notificationService;
+    private readonly AppDbContext _context;
 
     /// <param name="messageService">Service for message persistence and channel validation.</param>
-    public ChannelHub(MessageServices messageService)
-    {
+    /// <param name="notificationService">Service for creating notifications.</param>
+    /// <param name="context">Database context for channel name lookup.</param>
+    public ChannelHub(
+        MessageServices messageService,
+        NotificationService notificationService,
+        AppDbContext context
+    ) {
         _messageService = messageService;
+        _notificationService = notificationService;
+        _context = context;
     }
 
     /// <summary>
@@ -49,12 +59,6 @@ public class ChannelHub : Hub
     /// Joins a named channel group, loads recent messages, and notifies other members.
     /// </summary>
     /// <param name="channelId">The channel ID to join.</param>
-    /// <returns>A task that completes when the channel is joined and history is sent.</returns>
-    /// <remarks>
-    /// If the channel does not exist, the caller receives an <c>"Error"</c> event.
-    /// On success, the caller receives a <c>"JoinedChannel"</c> event with message history,
-    /// and other group members receive a <c>"UserJoined"</c> event.
-    /// </remarks>
     public async Task JoinChannel(int channelId)
     {
         try
@@ -79,7 +83,7 @@ public class ChannelHub : Hub
             
             await Clients.Caller.SendAsync("JoinedChannel", recentMessages);
             
-            await Clients.OthersInGroup(channelId.ToString()) .SendAsync("UserJoined", displayName);
+            await Clients.OthersInGroup(channelId.ToString()).SendAsync("UserJoined", displayName);
         }
         catch (Exception)
         {
@@ -89,15 +93,10 @@ public class ChannelHub : Hub
 
     /// <summary>
     /// Sends a message to the specified channel.
-    /// The sender's display name is extracted from the JWT. HTML is stripped for XSS prevention.
+    /// Triggers mention notifications for @mentioned users.
     /// </summary>
     /// <param name="channelId">The target channel ID.</param>
     /// <param name="text">The message body (empty text is rejected).</param>
-    /// <returns>A task that completes when the message is persisted and broadcast.</returns>
-    /// <remarks>
-    /// On success, all group members receive a <c>"NewMessage"</c> event.
-    /// If validation fails, the caller receives an <c>"Error"</c> event.
-    /// </remarks>
     public async Task SendMessage(int channelId, string text)
     {
         try
@@ -121,6 +120,9 @@ public class ChannelHub : Hub
             }
 
             var displayName = Context.User?.FindFirst("displayName")?.Value ?? "Unknown";
+            var senderUserId = int.Parse(
+                Context.User?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "0");
+
             var message = await _messageService.SaveMessageAsync(channelId, displayName, text);
 
             if (message is null)
@@ -136,10 +138,30 @@ public class ChannelHub : Hub
                 message.Text,
                 message.CreatedAt
             });
+
+            await ProcessMentionsAsync(channelId, senderUserId, displayName, text);
         }
         catch (Exception)
         {
             await Clients.Caller.SendAsync("Error", "Failed to send message. Please try again.");
+        }
+    }
+
+    /// <summary>
+    /// Shows up to the rest of group which one is currently typing.
+    /// </summary>
+    /// <param name="channelId">Indicates the current channel.</param>
+    public async Task TypingIndicator(int channelId)
+    {
+        try
+        {
+            var displayName = Context.User?.FindFirst("displayName")?.Value ?? "Unknown";
+            await Clients.OthersInGroup(channelId.ToString())
+                .SendAsync("UserTyping", displayName);
+        }
+        catch (Exception)
+        {
+            // Typing indicator failed — non-critical
         }
     }
 
@@ -170,22 +192,56 @@ public class ChannelHub : Hub
         }
 
         await base.OnDisconnectedAsync(exception);
-    } 
+    }
+
     /// <summary>
-         /// shows up to the rest of group which one is currently typing
-         /// </summary>
-         /// <param name="channelId">indicates the current channel</param>
-         public async Task TypingIndicator(int channelId)
-         {
-             try
-             {
-                 var displayName = Context.User?.FindFirst("displayName")?.Value ?? "Unknown";
-                 await Clients.OthersInGroup(channelId.ToString())
-                     .SendAsync("UserTyping", displayName);
-             }
-             catch (Exception)
-             {
-                 // Typing indicator failed — non-critical
-             }
-         }
+    /// Parses message for @mentions, finds users, and creates notifications.
+    /// Sends real-time notification via NotificationHub.
+    /// </summary>
+    private async Task ProcessMentionsAsync(
+        int channelId,
+        int senderUserId,
+        string senderName,
+        string messageText
+    ) {
+        try
+        {
+            var mentionedUsernames = NotificationService.ExtractMentions(messageText);
+            if (mentionedUsernames.Count == 0)
+                return;
+
+            var channel = await _context.Channels.FindAsync(channelId);
+            var channelName = channel?.Name ?? "unknown";
+
+            var mentionedUsers = await _notificationService
+                .FindUsersByUsernamesAsync(mentionedUsernames);
+
+            foreach (var user in mentionedUsers)
+            {
+                if (user.Id == senderUserId)
+                    continue;
+
+                var notification = await _notificationService.MentionNotifyAsync(
+                    user.Id, channelId, channelName, senderName, messageText);
+
+                if (notification != null)
+                {
+                    await Clients.Group($"user_{user.Id}").SendAsync("NewNotification", new
+                    {
+                        notification.Id,
+                        Type = notification.Type.ToString(),
+                        notification.Title,
+                        notification.Data,
+                        notification.IsRead,
+                        notification.IsSystemWide,
+                        notification.CreatedAt
+                    });
+                }
+            }
+        }
+        catch (Exception)
+        {
+            // Mention notifications failed — non-critical, message still sent
+        }
+    }
 }
