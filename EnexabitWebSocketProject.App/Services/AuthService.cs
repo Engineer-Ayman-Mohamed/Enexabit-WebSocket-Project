@@ -51,7 +51,8 @@ public class AuthService
             {
                 Username = username,
                 DisplayName = string.IsNullOrWhiteSpace(displayName) ? username : displayName,
-                PasswordHash = BCrypt.Net.BCrypt.HashPassword(password)
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword(password),
+                Role = "user"
             };
 
             _db.Users.Add(user);

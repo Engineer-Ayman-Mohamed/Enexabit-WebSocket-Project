@@ -259,7 +259,7 @@ public class NotificationService
         try
         {
             var query = _context.Notifications
-                .Where(n => n.UserId == userId || (n.IsSystemWide && n.UserId == 0))
+                .Where(n => n.UserId == userId || (n.IsSystemWide && n.UserId == null))
                 .OrderByDescending(n => n.CreatedAt);
 
             var totalCount = await query.CountAsync();
@@ -316,7 +316,7 @@ public class NotificationService
         try
         {
             return await _context.Notifications
-                .CountAsync(n => (n.UserId == userId || (n.IsSystemWide && n.UserId == 0)) && !n.IsRead);
+                .CountAsync(n => (n.UserId == userId || (n.IsSystemWide && n.UserId == null)) && !n.IsRead);
         }
         catch (Exception)
         {
@@ -336,7 +336,7 @@ public class NotificationService
         {
             var notification = await _context.Notifications
                 .FirstOrDefaultAsync(n => n.Id == notificationId &&
-                (n.UserId == userId || (n.IsSystemWide && n.UserId == 0)));
+                (n.UserId == userId || (n.IsSystemWide && n.UserId == null)));
 
             if (notification == null)
                 return false;
@@ -364,7 +364,7 @@ public class NotificationService
         {
             var notification = await _context.Notifications
                 .FirstOrDefaultAsync(n => n.Id == notificationId &&
-                (n.UserId == userId || (n.IsSystemWide && n.UserId == 0)));
+                (n.UserId == userId || (n.IsSystemWide && n.UserId == null)));
 
             if (notification == null || notification.Type != NotificationTypes.SystemMaintenance)
                 return false;
@@ -391,7 +391,7 @@ public class NotificationService
         try
         {
             var unread = await _context.Notifications
-                .Where(n => (n.UserId == userId || (n.IsSystemWide && n.UserId == 0)) && !n.IsRead)
+                .Where(n => (n.UserId == userId || (n.IsSystemWide && n.UserId == null)) && !n.IsRead)
                 .ToListAsync();
 
             var now = DateTime.UtcNow;
@@ -422,7 +422,7 @@ public class NotificationService
         {
             var notification = await _context.Notifications
                 .FirstOrDefaultAsync(n => n.Id == notificationId &&
-                                          (n.UserId == userId || (n.IsSystemWide && n.UserId == 0)));
+                                          (n.UserId == userId || (n.IsSystemWide && n.UserId == null)));
 
             if (notification == null)
                 return false;

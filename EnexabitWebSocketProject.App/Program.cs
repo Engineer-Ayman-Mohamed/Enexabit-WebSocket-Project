@@ -116,11 +116,12 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             {
                 var accessToken = context.Request.Query["access_token"];
                 if (!string.IsNullOrEmpty(accessToken) &&
-                    context.HttpContext.Request.Path.StartsWithSegments("/channelHub"))
+                    context.HttpContext.Request.Path.StartsWithSegments("/channelHub") ||
+                    context.HttpContext.Request.Path.StartsWithSegments("/notificationHub"))
                 {
                     context.Token = accessToken;
                 }
-                return Task.CompletedTask;
+                return Task.CompletedTask;  
             },
             OnAuthenticationFailed = context =>
             {
