@@ -27,6 +27,7 @@ public class ChannelHub : Hub
     private readonly MessageServices _messageService;
     private readonly NotificationService _notificationService;
     private readonly AppDbContext _context;
+    private readonly IHubContext<NotificationHub> _notificationHub;
 
     /// <param name="messageService">Service for message persistence and channel validation.</param>
     /// <param name="notificationService">Service for creating notifications.</param>
@@ -34,11 +35,12 @@ public class ChannelHub : Hub
     public ChannelHub(
         MessageServices messageService,
         NotificationService notificationService,
-        AppDbContext context
-    ) {
+        AppDbContext context, IHubContext<NotificationHub> notificationHub
+        ) {
         _messageService = messageService;
         _notificationService = notificationService;
         _context = context;
+        _notificationHub = notificationHub;
     }
 
     /// <summary>
@@ -226,7 +228,7 @@ public class ChannelHub : Hub
 
                 if (notification != null)
                 {
-                    await Clients.Group($"user_{user.Id}").SendAsync("NewNotification", new
+                    await _notificationHub.Clients.Group($"user_{user.Id}").SendAsync("NewNotification", new
                     {
                         notification.Id,
                         Type = notification.Type.ToString(),
