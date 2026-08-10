@@ -16,7 +16,6 @@ public static class ImportExportEndpoints
 
     public static void Map(RouteGroupBuilder group)
     {
-        // ── Sync Export (small datasets) ──────────────────────
         group.MapGet("/export/users", ExportUsers)
             .WithName("ExportUsers")
             .WithSummary("Download all users as Excel (synchronous — use for small datasets)")
@@ -27,7 +26,6 @@ public static class ImportExportEndpoints
             .WithSummary("Download all messages as Excel (synchronous — use for small datasets)")
             .Produces<FileResult>();
 
-        // ── Async Export (queued via Hangfire) ────────────────
         group.MapPost("/export/{type}/queue", QueueExport)
             .WithName("QueueExport")
             .WithSummary("Queue an export job for background processing — returns immediately")
@@ -46,22 +44,22 @@ public static class ImportExportEndpoints
             .Produces<FileResult>()
             .ProducesProblem(404);
 
-        // ── Import ────────────────────────────────────────────
         group.MapPost("/import/users", ImportUsers)
             .WithName("ImportUsers")
             .WithSummary("Upload an Excel file to bulk-import users (max 10MB)")
             .Accepts<IFormFile>("multipart/form-data")
             .Produces<ImportResult>()
-            .ProducesProblem(400);
+            .ProducesProblem(400)
+            .DisableAntiforgery();
 
         group.MapPost("/import/messages", ImportMessages)
             .WithName("ImportMessages")
             .WithSummary("Upload an Excel file to bulk-import messages (max 10MB)")
             .Accepts<IFormFile>("multipart/form-data")
             .Produces<ImportResult>()
-            .ProducesProblem(400);
+            .ProducesProblem(400)
+            .DisableAntiforgery();
 
-        // ── Templates ────────────────────────────────────────
         group.MapGet("/template/users", ExportUserTemplate)
             .WithName("UserImportTemplate")
             .WithSummary("Download a blank Excel template for user imports");
