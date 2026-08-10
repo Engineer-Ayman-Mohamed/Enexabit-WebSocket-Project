@@ -1,6 +1,6 @@
 ﻿using EnexabitWebSocketProject.App.DTOs.Export;
 
-namespace EnexabitWebSocketProject.App.Services;
+namespace EnexabitWebSocketProject.App.Services.Export;
 
 /// <summary>
 /// Represents an export job and its current state.
