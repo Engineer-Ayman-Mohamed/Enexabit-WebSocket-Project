@@ -8,6 +8,10 @@ using EnexabitWebSocketProject.App.Features.Admin;
 using EnexabitWebSocketProject.App.Features.Notifications;
 using EnexabitWebSocketProject.App.Hubs;
 using EnexabitWebSocketProject.App.Services;
+using EnexabitWebSocketProject.App.Services.Export;
+using EnexabitWebSocketProject.App.Services.Jobs;
+using Hangfire;
+using Hangfire.SqlServer;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.SignalR;
@@ -28,7 +32,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<TokenService>();
-builder.Services.AddScoped<MessageServices>();
+builder.Services.AddScoped<MessageServices>(); 
 builder.Services.AddScoped<NotificationService>();
 
 var signalR = builder.Services.AddSignalR(options =>
@@ -213,9 +217,52 @@ builder.Services.AddHealthChecks()
         failureStatus: HealthStatus.Unhealthy,
         tags: ["realtime"]);
 
+builder.Services.AddHangfire(configuration: config =>
+{
+    config.SetDataCompatibilityLevel(CompatibilityLevel.Version_180);
+    config.UseSimpleAssemblyNameTypeSerializer();
+    config.UseRecommendedSerializerSettings();
+    config.UseSqlServerStorage(
+        builder.Configuration.GetConnectionString("DefaultConnection"),
+        new SqlServerStorageOptions
+        {
+            CommandBatchMaxTimeout = TimeSpan.FromMinutes(5),
+            SlidingInvisibilityTimeout = TimeSpan.FromMinutes(5),
+            QueuePollInterval = TimeSpan.Zero,
+            UseRecommendedIsolationLevel = true,
+            DisableGlobalLocks = true,
+            PrepareSchemaIfNecessary = true,
+            SchemaName = "HangFire"
+        }
+    );
+});
+
+builder.Services.AddHangfireServer(options =>
+{
+    options.WorkerCount = 2;
+    options.Queues = ["default"];
+    options.ServerName = "ExcelExport";
+});
+
+builder.Services.AddSingleton<ExportJobStore>();
+builder.Services.AddScoped<ImportExportService>();
+builder.Services.AddScoped<HangfireExportJobHandler>();
+
+builder.Services.AddAntiforgery();
 var app = builder.Build();
 
 await MigrateDatabaseWithRetryAsync(app);
+
+
+app.UseHangfireDashboard("/hangfire", new DashboardOptions
+{
+    DashboardTitle = "Excel Export Jobs",
+    IsReadOnlyFunc = _ => false,
+    Authorization = [new HangfireCustomFilter(app.Services)]
+});
+
+HangfireRecurringJobs.Register();
+
 
 app.Use(async (context, next) =>
 {
@@ -295,9 +342,17 @@ app.MapGet("/api/health", async (HealthCheckService healthCheck) =>
 .Produces<object>()
 .ProducesProblem(503)
 .RequireAuthorization();
-AdminEndpoints.Map(app.MapGroup("/api/admin").RequireAuthorization("AdminOnly"));
+AdminEndpoints
+    .Map(app.MapGroup("/api/admin")
+        .RequireAuthorization("AdminOnly"));
 
-AdminNotificationsEndpoints.Map(app.MapGroup("/api/admin").RequireAuthorization("AdminOnly"));
+AdminNotificationsEndpoints
+    .Map(app.MapGroup("/api/admin")
+        .RequireAuthorization("AdminOnly"));
+
+ImportExportEndpoints
+    .Map(app.MapGroup("/api/admin/import-export")
+        .RequireAuthorization("AdminOnly"));
 
 app.Run();
 static async Task MigrateDatabaseWithRetryAsync(WebApplication app)
