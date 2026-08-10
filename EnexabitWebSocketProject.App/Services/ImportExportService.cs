@@ -100,17 +100,17 @@ public class ImportExportService
             return new ImportResult(rows.Count, 0, rows.Count, errors);
 
         var usernamesToCheck = validRows
-            .Select(r => r.Username.ToLowerInvariant())
+            .Select(r => r.Username)
             .Distinct()
             .ToList();
 
         var existingUsernames = await _context.Users
-            .Where(u => usernamesToCheck.Contains(u.Username.ToLowerInvariant()))
-            .Select(u => u.Username.ToLowerInvariant())
+            .Where(u => usernamesToCheck.Contains(u.Username))
+            .Select(u => u.Username)
             .ToListAsync(ct);
 
         foreach (var row in validRows
-                     .Where(r => existingUsernames.Contains(r.Username.ToLowerInvariant())))
+                     .Where(r => existingUsernames.Contains(r.Username, StringComparer.OrdinalIgnoreCase)))
         {
             errors.Add(new ImportRowError(row.RowNumber, "Username",
                 $"Username '{row.Username}' already exists in the database"));
