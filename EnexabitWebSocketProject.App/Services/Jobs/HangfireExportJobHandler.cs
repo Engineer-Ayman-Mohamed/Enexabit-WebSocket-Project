@@ -1,7 +1,8 @@
 ﻿using EnexabitWebSocketProject.App.DTOs.Export;
+using EnexabitWebSocketProject.App.Services.Export;
 using Hangfire;
 
-namespace EnexabitWebSocketProject.App.Services.Export;
+namespace EnexabitWebSocketProject.App.Services.Jobs;
 
 /// <summary>Entry point that Hangfire calls to execute export jobs.
 /// Resolves ImportExportService from DI, generates the .xlsx, and stores the result

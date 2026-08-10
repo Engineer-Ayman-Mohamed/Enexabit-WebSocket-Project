@@ -1,6 +1,6 @@
 ﻿using Hangfire;
 
-namespace EnexabitWebSocketProject.App.Services.Export;
+namespace EnexabitWebSocketProject.App.Services.Jobs;
 
 /// <summary>Recurring Hangfire jobs for maintenance tasks.</summary>
 public static class HangfireRecurringJobs
