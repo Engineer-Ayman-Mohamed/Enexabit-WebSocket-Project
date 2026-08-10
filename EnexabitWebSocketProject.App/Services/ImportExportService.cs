@@ -183,44 +183,49 @@ public class ImportExportService
         int totalRows,
         List<ImportRowError> errors,
         CancellationToken ct
-    ) {
-        await using var transaction = await _context.Database.BeginTransactionAsync(ct);
-        try
+    )
+    {
+        var executionStrategy = _context.Database.CreateExecutionStrategy();
+        return await executionStrategy.ExecuteAsync(async () =>
         {
-            var entities = validRows.Select(r => new User
+            await using var transaction = await _context.Database.BeginTransactionAsync(ct);
+            try
             {
-                Username = r.Username,
-                DisplayName = r.DisplayName,
-                Role = r.Role.ToLowerInvariant(),
-                PasswordHash = BCrypt.Net.BCrypt.HashPassword("pass123"),
-                CreatedAt = DateTime.UtcNow
-            }).ToList();
+                var entities = validRows.Select(r => new User
+                {
+                    Username = r.Username,
+                    DisplayName = r.DisplayName,
+                    Role = r.Role.ToLowerInvariant(),
+                    PasswordHash = BCrypt.Net.BCrypt.HashPassword("pass123"),
+                    CreatedAt = DateTime.UtcNow
+                }).ToList();
 
-            await _context.Users.AddRangeAsync(entities, ct);
-            await _context.SaveChangesAsync(ct);
-            await transaction.CommitAsync(ct);
+                await _context.Users.AddRangeAsync(entities, ct);
+                await _context.SaveChangesAsync(ct);
+                await transaction.CommitAsync(ct);
 
-            _logger.LogInformation("Imported {Count} users from Excel", entities.Count);
-            return new ImportResult(totalRows, entities.Count, totalRows - entities.Count, errors);
-        }
-        catch (DbUpdateException ex)
-        {
-            await transaction.RollbackAsync(ct);
+                _logger.LogInformation("Imported {Count} users from Excel", entities.Count);
+                return new ImportResult(totalRows, entities.Count, totalRows - entities.Count, errors);
+            }
+            catch (DbUpdateException ex)
+            {
+                await transaction.RollbackAsync(ct);
 
-            var detail = ex.InnerException?.Message ?? ex.Message;
-            _logger.LogWarning("User import failed due to DB constraint: {Detail}", detail);
+                var detail = ex.InnerException?.Message ?? ex.Message;
+                _logger.LogWarning("User import failed due to DB constraint: {Detail}", detail);
 
-            errors.Add(new ImportRowError(0, "Database",
-                $"Import failed — possible duplicate username detected by database constraint: {detail}"));
-            return new ImportResult(totalRows, 0, totalRows, errors);
-        }
-        catch (Exception ex)
-        {
-            await transaction.RollbackAsync(ct);
-            _logger.LogError(ex, "User import transaction failed");
-            errors.Add(new ImportRowError(0, "Transaction", $"Import failed: {ex.Message}"));
-            return new ImportResult(totalRows, 0, totalRows, errors);
-        }
+                errors.Add(new ImportRowError(0, "Database",
+                    $"Import failed — possible duplicate username detected by database constraint: {detail}"));
+                return new ImportResult(totalRows, 0, totalRows, errors);
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync(ct);
+                _logger.LogError(ex, "User import transaction failed");
+                errors.Add(new ImportRowError(0, "Transaction", $"Import failed: {ex.Message}"));
+                return new ImportResult(totalRows, 0, totalRows, errors);
+            }
+        });
     }
 
     /// <summary>Inserts validated message rows in a single database transaction.</summary>
@@ -230,38 +235,42 @@ public class ImportExportService
         List<ImportRowError> errors,
         CancellationToken ct
     ) {
-        await using var transaction = await _context.Database.BeginTransactionAsync(ct);
-        try
+        var executionStrategy = _context.Database.CreateExecutionStrategy();
+        return await executionStrategy.ExecuteAsync(async () =>
         {
-            var entities = validRows.Select(r => new Message
+            await using var transaction = await _context.Database.BeginTransactionAsync(ct);
+            try
             {
-                ChannelId = r.ChannelId,
-                UserName = r.UserName,
-                Text = Sanitizer.StripHtml(r.Text),
-                CreatedAt = r.CreatedAt
-            }).ToList();
+                var entities = validRows.Select(r => new Message
+                {
+                    ChannelId = r.ChannelId,
+                    UserName = r.UserName,
+                    Text = Sanitizer.StripHtml(r.Text),
+                    CreatedAt = r.CreatedAt
+                }).ToList();
 
-            await _context.Messages.AddRangeAsync(entities, ct);
-            await _context.SaveChangesAsync(ct);
-            await transaction.CommitAsync(ct);
+                await _context.Messages.AddRangeAsync(entities, ct);
+                await _context.SaveChangesAsync(ct);
+                await transaction.CommitAsync(ct);
 
-            _logger.LogInformation("Imported {Count} messages from Excel", entities.Count);
-            return new ImportResult(totalRows, entities.Count, totalRows - entities.Count, errors);
-        }
-        catch (DbUpdateException ex)
-        {
-            await transaction.RollbackAsync(ct);
-            var detail = ex.InnerException?.Message ?? ex.Message;
-            errors.Add(new ImportRowError(0, "Database", $"Import failed: {detail}"));
-            return new ImportResult(totalRows, 0, totalRows, errors);
-        }
-        catch (Exception ex)
-        {
-            await transaction.RollbackAsync(ct);
-            _logger.LogError(ex, "Message import transaction failed");
-            errors.Add(new ImportRowError(0, "Transaction", $"Import failed: {ex.Message}"));
-            return new ImportResult(totalRows, 0, totalRows, errors);
-        }
+                _logger.LogInformation("Imported {Count} messages from Excel", entities.Count);
+                return new ImportResult(totalRows, entities.Count, totalRows - entities.Count, errors);
+            }
+            catch (DbUpdateException ex)
+            {
+                await transaction.RollbackAsync(ct);
+                var detail = ex.InnerException?.Message ?? ex.Message;
+                errors.Add(new ImportRowError(0, "Database", $"Import failed: {detail}"));
+                return new ImportResult(totalRows, 0, totalRows, errors);
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync(ct);
+                _logger.LogError(ex, "Message import transaction failed");
+                errors.Add(new ImportRowError(0, "Transaction", $"Import failed: {ex.Message}"));
+                return new ImportResult(totalRows, 0, totalRows, errors);
+            }
+        });
     }
 
 
@@ -290,7 +299,7 @@ public class ImportExportService
 
             if (string.IsNullOrWhiteSpace(row.Role))
                 errors.Add(new(row.RowNumber, "Role", "Role is required"));
-            else if (!validRoles.Contains(row.Role.ToLowerInvariant()))
+            else if (!validRoles.Contains(row.Role, StringComparer.OrdinalIgnoreCase))
                 errors.Add(new(row.RowNumber, "Role",
                     $"Invalid role '{row.Role}'. Must be one of: {string.Join(", ", validRoles)}"));
         }
